@@ -1,0 +1,17 @@
+.PHONY: setup run build clean
+
+PROJECT_DIR := $(CURDIR)
+APP_DIR := $(PROJECT_DIR)/Parrocchettami
+
+setup:
+	bash $(PROJECT_DIR)/setup.sh
+
+build:
+	cd $(APP_DIR) && swift build
+
+run:
+	PARROCCHETTAMI_HOME=$(PROJECT_DIR) cd $(APP_DIR) && swift run
+
+clean:
+	cd $(APP_DIR) && swift package clean
+	rm -rf $(PROJECT_DIR)/bin $(PROJECT_DIR)/models

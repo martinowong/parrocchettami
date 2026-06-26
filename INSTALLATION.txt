@@ -1,0 +1,48 @@
+Installing Parrocchettami
+=========================
+
+This build supports Apple Silicon Macs and requires macOS 14 Sonoma or later.
+
+Install
+-------
+
+1. Open the Parrocchettami DMG.
+2. Drag Parrocchettami.app onto the Applications shortcut.
+3. Open Applications in Finder.
+4. Control-click Parrocchettami, choose Open, then confirm Open.
+
+The Control-click step is necessary because this build is not notarized by Apple.
+
+First launch
+------------
+
+Click Download Model when prompted. The one-time download is approximately
+742 MB and needs roughly 1 GB of free disk space. After the download finishes,
+all transcription runs locally and the app can be used offline.
+
+The model is stored at:
+
+~/Library/Application Support/Parrocchettami/models/
+
+If macOS still blocks the app
+-----------------------------
+
+Only do this if you received the DMG directly from someone you trust. Open
+Terminal and run:
+
+xattr -dr com.apple.quarantine "/Applications/Parrocchettami.app"
+open "/Applications/Parrocchettami.app"
+
+Privacy
+-------
+
+Audio is processed locally. The app connects to Hugging Face only to download
+the speech model during first-time setup.
+
+Uninstall
+---------
+
+Delete the app from Applications. To also remove the downloaded model and local
+transcription history, delete:
+
+~/Library/Application Support/Parrocchettami/

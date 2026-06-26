@@ -1,0 +1,20 @@
+.DS_Store
+
+# SwiftPM and build products
+.build/
+Parrocchettami/.build/
+DerivedData/
+
+# Local runtime dependencies downloaded by setup.sh
+bin/
+models/
+
+# Generated release artifacts
+dist/
+*.dmg
+*.dmg.sha256
+
+# Temporary/package output
+*.xcarchive/
+*.app/
+*.pkg
