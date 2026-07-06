@@ -1,5 +1,8 @@
 # Third-party notices
 
+Parrocchettami source code is licensed separately under the GNU General
+Public License, version 3 or later. See `LICENSE`.
+
 Parrocchettami distributes or downloads the following third-party components.
 
 ## parakeet.cpp

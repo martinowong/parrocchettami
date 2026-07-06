@@ -132,6 +132,19 @@ make clean     # Remove build artifacts + downloaded dependencies
 
 ## License
 
-This project is unlicensed. It wraps:
-- [parakeet.cpp](https://github.com/mudler/parakeet.cpp) — MIT
-- [Parakeet TDT 0.6B v3 model](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) — NVIDIA license (see model card)
+Parrocchettami's source code is released under the GNU General Public
+License, version 3 or later (GPL-3.0-or-later). See [LICENSE](LICENSE).
+
+You may use, study, modify, and redistribute the app under the GPL. If you
+distribute modified versions or binary builds, keep the same GPL freedoms,
+include the license and notices, and make the corresponding source code
+available under GPL-3.0-or-later.
+
+Donations, sponsorships, paid support, and pay-what-you-want downloads are
+welcome and compatible with this license. Parrocchettami is not intended to
+include ads, tracking, or data sales.
+
+Third-party components have their own licenses and attribution requirements.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), including:
+- [parakeet.cpp](https://github.com/mudler/parakeet.cpp) - MIT
+- [Parakeet TDT 0.6B v3 model](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) / GGUF conversion - CC BY 4.0

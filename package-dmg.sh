@@ -26,7 +26,7 @@ if [[ "$(uname -m)" != "arm64" ]]; then
     exit 1
 fi
 
-for required in "$CLI_SOURCE" "$ENTITLEMENTS" "$ICON_SOURCE/icon.json" "$SCRIPT_DIR/dmg/background.tiff" "$SCRIPT_DIR/INSTALLATION.txt" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md"; do
+for required in "$CLI_SOURCE" "$ENTITLEMENTS" "$ICON_SOURCE/icon.json" "$SCRIPT_DIR/dmg/background.tiff" "$SCRIPT_DIR/INSTALLATION.txt" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md"; do
     if [[ ! -f "$required" ]]; then
         echo "ERROR: Missing required file: $required"
         exit 1
@@ -76,6 +76,7 @@ done
 /bin/cp -X "$ICON_BUILD_DIR/Assets.car" "$APP_BUNDLE/Contents/Resources/Assets.car"
 /bin/cp -X "$ICON_BUILD_DIR/parrocchettami.icns" "$APP_BUNDLE/Contents/Resources/parrocchettami.icns"
 
+/bin/cp -X "$SCRIPT_DIR/LICENSE" "$APP_BUNDLE/Contents/Resources/LICENSE"
 /bin/cp -X "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$APP_BUNDLE/Contents/Resources/THIRD_PARTY_NOTICES.md"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
@@ -128,7 +129,15 @@ codesign -d --entitlements :- "$APP_BUNDLE" 2>&1 | grep -q "com.apple.security.d
 mkdir -p "$STAGING_DIR"
 ditto "$APP_BUNDLE" "$STAGING_DIR/$APP_NAME.app"
 ln -s /Applications "$STAGING_DIR/Applications"
-/bin/cp -X "$SCRIPT_DIR/INSTALLATION.txt" "$STAGING_DIR/Installation Guide.txt"
+{
+    /bin/cat "$SCRIPT_DIR/INSTALLATION.txt"
+    printf "\n\n"
+    printf "License\n=======\n\n"
+    /bin/cat "$SCRIPT_DIR/LICENSE"
+    printf "\n\n"
+    printf "Third Party Notices\n===================\n\n"
+    /bin/cat "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md"
+} > "$STAGING_DIR/Installation Guide.txt"
 mkdir -p "$STAGING_DIR/.background"
 /bin/cp -X "$SCRIPT_DIR/dmg/background.tiff" "$STAGING_DIR/.background/background.tiff"
 xattr -cr "$STAGING_DIR"
