@@ -27,6 +27,7 @@ struct ContentView: View {
     @State private var showAllHistory = false
     @State private var showDiscardRecordingConfirmation = false
     @State private var historySearchText = ""
+    @FocusState private var isLanguageFocused: Bool
 
     private static let recordingNameFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -107,6 +108,7 @@ struct ContentView: View {
                 .padding(14)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .background(InitialFocusClearingView().frame(width: 0, height: 0))
         .alert("Something went wrong", isPresented: $showAlert) {
             if let retryURL = retryFileURL {
                 Button("Retry") {
@@ -239,10 +241,16 @@ struct ContentView: View {
                     .padding(.vertical, 7)
                     .frame(minWidth: 150, alignment: .leading)
                     .background(.quaternary.opacity(0.8), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(isLanguageFocused ? Color.accentColor.opacity(0.9) : .clear, lineWidth: 2)
+                    )
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .menuStyle(.borderlessButton)
                 .buttonStyle(.plain)
+                .focused($isLanguageFocused)
+                .focusEffectDisabled()
                 .fixedSize(horizontal: true, vertical: false)
                 .accessibilityLabel("Transcription language")
                 .accessibilityValue(selectedLanguageName)
@@ -320,7 +328,7 @@ struct ContentView: View {
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.14)))
             .accessibilityLabel("Search transcription history")
 
-            List {
+            VStack(spacing: 12) {
                 ForEach(visibleHistoryEntries) { entry in
                     HistoryRow(
                         entry: entry,
@@ -333,35 +341,15 @@ struct ContentView: View {
                             grouping = 0.5
                         },
                         onExport: {
-                            let display = entry.result.formatted(as: outputFormat, grouping: grouping)
-                            exportResult(display, format: outputFormat)
+                            let display = entry.result.formatted(as: .plain)
+                            exportResult(display, format: .plain)
                         },
                         onArchive: { history.archive(entry) },
                         onDelete: { history.delete(entry) }
                     )
-                    .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
-                    .listRowSeparator(.hidden)
-                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                        Button {
-                            history.archive(entry)
-                        } label: {
-                            Label("Archive", systemImage: "archivebox")
-                        }
-                        .tint(.blue)
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            history.delete(entry)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .frame(height: historyListHeight)
-            .background(Color.clear)
+            .padding(.top, 10)
 
             if visibleHistoryEntries.isEmpty {
                 Text("No matching transcriptions")
@@ -375,10 +363,6 @@ struct ContentView: View {
 
     private var visibleHistoryEntries: ArraySlice<HistoryEntry> {
         filteredHistoryEntries.prefix(showAllHistory ? 20 : 5)
-    }
-
-    private var historyListHeight: CGFloat {
-        CGFloat(max(1, visibleHistoryEntries.count)) * 48
     }
 
     private var filteredHistoryEntries: [HistoryEntry] {
@@ -632,6 +616,37 @@ struct ContentView: View {
             try text.write(to: url, atomically: true, encoding: .utf8)
         } catch {
             showError("The transcription could not be exported: \(error.localizedDescription)")
+        }
+    }
+}
+
+private struct InitialFocusClearingView: NSViewRepresentable {
+    func makeNSView(context: Context) -> InitialFocusClearingNSView {
+        InitialFocusClearingNSView()
+    }
+
+    func updateNSView(_ nsView: InitialFocusClearingNSView, context: Context) {
+        nsView.clearInitialFocusIfNeeded()
+    }
+}
+
+private final class InitialFocusClearingNSView: NSView {
+    private var didClearInitialFocus = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        clearInitialFocusIfNeeded()
+    }
+
+    func clearInitialFocusIfNeeded() {
+        guard !didClearInitialFocus else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  !self.didClearInitialFocus,
+                  let window = self.window else { return }
+            window.makeFirstResponder(nil)
+            self.didClearInitialFocus = true
         }
     }
 }

@@ -16,6 +16,7 @@ struct InputWorkspace: View {
     let onClearFile: () -> Void
 
     @State private var isDropTargeted = false
+    @FocusState private var focusedControl: WorkspaceFocus?
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -63,10 +64,14 @@ struct InputWorkspace: View {
             .padding(24)
             .contentShape(Rectangle())
         }
-        .buttonStyle(WorkspaceButtonStyle(isEmphasized: isDropTargeted))
+        .buttonStyle(WorkspaceButtonStyle(
+            isEmphasized: isDropTargeted,
+            isFocused: focusedControl == .file
+        ))
         .disabled(!isReady || isTranscribing || recorder.isRecording)
         .keyboardShortcut("o", modifiers: .command)
-        .focusable(false)
+        .focused($focusedControl, equals: .file)
+        .focusEffectDisabled()
         .help("Choose audio to transcribe (⌘O)")
         .accessibilityLabel("Choose an audio file")
         .accessibilityHint("Opens a file picker. You can also drag and drop an audio file here.")
@@ -135,10 +140,22 @@ struct InputWorkspace: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(recorder.isRecording ? Color.red.opacity(0.8) : Color.secondary.opacity(0.16), lineWidth: recorder.isRecording ? 2 : 1)
+                .stroke(recordingBorderColor, lineWidth: recorder.isRecording || focusedControl == .recording ? 2 : 1)
         )
         .shadow(color: .black.opacity(0.07), radius: 10, y: 4)
         .disabled(!isReady || isTranscribing)
+        .focused($focusedControl, equals: .recording)
+        .focusEffectDisabled()
+        .focusable(true)
+        .onKeyPress(.space) {
+            onToggleRecording()
+            return .handled
+        }
+        .onKeyPress(.return) {
+            onToggleRecording()
+            return .handled
+        }
+        .accessibilityAddTraits(.isButton)
     }
 
     private var recordingSecondaryActions: some View {
@@ -179,6 +196,12 @@ struct InputWorkspace: View {
 
     private var recordingButtonForeground: Color {
         recorder.isRecording && !recorder.isPaused ? .white : .primary
+    }
+
+    private var recordingBorderColor: Color {
+        if recorder.isRecording { return Color.red.opacity(0.8) }
+        if focusedControl == .recording { return Color.accentColor.opacity(0.9) }
+        return Color.secondary.opacity(0.16)
     }
 
     private var recordingTitle: String {
@@ -256,8 +279,14 @@ struct InputWorkspace: View {
     }
 }
 
+private enum WorkspaceFocus: Hashable {
+    case file
+    case recording
+}
+
 private struct WorkspaceButtonStyle: ButtonStyle {
     let isEmphasized: Bool
+    let isFocused: Bool
     var tint: Color = .accentColor
 
     func makeBody(configuration: Configuration) -> some View {
@@ -268,11 +297,16 @@ private struct WorkspaceButtonStyle: ButtonStyle {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(isEmphasized ? tint.opacity(0.8) : Color.secondary.opacity(0.16), lineWidth: isEmphasized ? 2 : 1)
+                    .stroke(borderColor, lineWidth: isEmphasized || isFocused ? 2 : 1)
             )
             .shadow(color: .black.opacity(configuration.isPressed ? 0.03 : 0.07), radius: configuration.isPressed ? 2 : 10, y: configuration.isPressed ? 1 : 4)
             .scaleEffect(configuration.isPressed ? 0.992 : 1)
             .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+    }
+
+    private var borderColor: Color {
+        if isEmphasized || isFocused { return tint.opacity(0.9) }
+        return Color.secondary.opacity(0.16)
     }
 }
 
