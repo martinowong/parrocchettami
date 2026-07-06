@@ -10,7 +10,7 @@ build:
 	cd $(APP_DIR) && swift build
 
 run:
-	PARROCCHETTAMI_HOME=$(PROJECT_DIR) cd $(APP_DIR) && swift run
+	cd "$(APP_DIR)" && PARROCCHETTAMI_HOME="$(PROJECT_DIR)" swift run
 
 clean:
 	cd $(APP_DIR) && swift package clean

@@ -89,7 +89,7 @@ if [ -f "$MODEL_PATH" ]; then
 else
     echo ""
     echo "--- Downloading model: $MODEL_FILE ---"
-    echo "Size: ~350MB, this may take a few minutes..."
+    echo "Size: ~707MB, this may take a few minutes..."
     MODEL_TEMP="$DOWNLOAD_DIR/$MODEL_FILE"
     curl --fail --location --progress-bar -o "$MODEL_TEMP" "$MODEL_URL"
     verify_sha256 "$MODEL_TEMP" "$MODEL_SHA256"
