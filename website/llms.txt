@@ -1,0 +1,75 @@
+# Parrocchettami
+
+Parrocchettami is an open-source macOS app for fast, private offline audio transcription.
+
+Suggested short description:
+Parrocchettami turns audio into text locally on Apple Silicon Macs. It uses a local AI model based on NVIDIA Parakeet through parakeet.cpp, works offline after the model download, and exports plain text, timestamped text, or SRT subtitles.
+
+## Core facts
+
+- Product name: Parrocchettami
+- Website language: Italian
+- App type: native macOS SwiftUI app
+- Platform: macOS 14 or later, Apple Silicon Mac
+- Main claim in Italian: "Trascrizione audio offline veloce e privata"
+- Developer: Martino Wong, also known as @oradecima
+- Developer site: https://oradecima.com
+- Source code: https://github.com/martinowong/parrocchettami
+
+## What the app does
+
+Parrocchettami transcribes audio into text on the user's Mac. Audio is processed locally and is not uploaded to external transcription services.
+
+The app has two main modes:
+
+1. Transcribe an existing audio file.
+2. Record audio from the microphone and then transcribe it.
+
+Supported exports:
+
+- Plain text
+- Text with timestamps
+- SRT subtitles
+
+## Privacy model
+
+Parrocchettami does not require an account and does not use a server for transcription.
+
+After the AI model has been downloaded, transcription does not require an internet connection.
+
+Audio is intended to stay on the Mac. The website states that audio is not uploaded to external services and is deleted after transcription.
+
+## How it works
+
+Parrocchettami is a SwiftUI macOS app that wraps the `parakeet-cli` binary from parakeet.cpp.
+
+The app uses a local GGUF speech model based on NVIDIA Parakeet TDT 0.6B v3. In the current project documentation, the packaged model is `tdt-0.6b-v3-q5_k.gguf`, about 707 MB.
+
+The high-level architecture is:
+
+User -> SwiftUI app -> parakeet-cli subprocess -> local GGUF model -> JSON output -> parsed and formatted transcript.
+
+## Languages
+
+Parrocchettami uses NVIDIA Parakeet / parakeet.cpp and presents support for 25 European languages.
+
+## Installation notes
+
+Parrocchettami is distributed for macOS as an app/DMG-style install.
+
+The app is not notarized yet. On first launch, macOS may show a warning such as "Apple non ha potuto verificare questa app". This warning means Apple has not verified the app through notarization; it is not a statement that the app contains malware.
+
+The site explains that notarization requires enrollment in the Apple Developer Program, which costs 100 euro per year.
+
+Because the project is open source, users can inspect the source code and build the app directly from code if they prefer.
+
+## Comparison positioning
+
+Compared with Whisper-based workflows, Parrocchettami focuses on a narrow Mac use case: a simple local app, no Python setup, no account, no upload of audio files, and a lightweight Parakeet-based model.
+
+Compared with online transcription services such as Otter.ai or Descript, Parrocchettami emphasizes offline use, local processing, privacy, and open source distribution.
+
+## Website visual note
+
+The website includes an explanatory animated audio-to-text illustration. It is not a screenshot of the real app interface.
+
