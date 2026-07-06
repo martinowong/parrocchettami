@@ -5,6 +5,8 @@ final class ModelInstaller: NSObject, ObservableObject {
     static let modelFileName = "tdt-0.6b-v3-q5_k.gguf"
     static let modelURL = URL(string: "https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/tdt-0.6b-v3-q5_k.gguf")!
     static let expectedSHA256 = "5ebd1d55609b5ad9dac1c457eeb87a9904f199d6fbbb738453182d010646c2e4"
+    private static let validationCacheLock = NSLock()
+    private static var validationCache: [String: CachedModelValidation] = [:]
 
     @Published private(set) var isInstalled: Bool
     @Published private(set) var isDownloading = false
@@ -19,7 +21,7 @@ final class ModelInstaller: NSObject, ObservableObject {
     )
 
     override init() {
-        isInstalled = FileManager.default.fileExists(atPath: Self.installedModelURL.path)
+        isInstalled = Self.modelFileIsValid(at: Self.installedModelURL)
         super.init()
     }
 
@@ -64,7 +66,32 @@ final class ModelInstaller: NSObject, ObservableObject {
         try FileManager.default.moveItem(at: temporaryURL, to: destination)
     }
 
-    private static func sha256(of url: URL) throws -> String {
+    static func modelFileIsValid(
+        at url: URL,
+        expectedSHA256: String = ModelInstaller.expectedSHA256
+    ) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let cacheKey = "\(url.path)|\(expectedSHA256)"
+        let cached = cachedValidation(for: cacheKey)
+        if cached?.fileSize == values?.fileSize,
+           cached?.modificationDate == values?.contentModificationDate {
+            return cached?.isValid == true
+        }
+
+        let isValid = (try? sha256(of: url)) == expectedSHA256
+        cacheValidation(
+            CachedModelValidation(
+                fileSize: values?.fileSize,
+                modificationDate: values?.contentModificationDate,
+                isValid: isValid
+            ),
+            for: cacheKey
+        )
+        return isValid
+    }
+
+    static func sha256(of url: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
 
@@ -74,6 +101,24 @@ final class ModelInstaller: NSObject, ObservableObject {
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
+
+    private static func cachedValidation(for key: String) -> CachedModelValidation? {
+        validationCacheLock.lock()
+        defer { validationCacheLock.unlock() }
+        return validationCache[key]
+    }
+
+    private static func cacheValidation(_ validation: CachedModelValidation, for key: String) {
+        validationCacheLock.lock()
+        validationCache[key] = validation
+        validationCacheLock.unlock()
+    }
+}
+
+private struct CachedModelValidation {
+    let fileSize: Int?
+    let modificationDate: Date?
+    let isValid: Bool
 }
 
 extension ModelInstaller: URLSessionDownloadDelegate {

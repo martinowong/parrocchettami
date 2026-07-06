@@ -45,14 +45,18 @@ class Transcriber: ObservableObject {
         log += "\nLooking for model:\n"
         for path in modelCandidates {
             let exists = FileManager.default.fileExists(atPath: path)
-            log += "  \(path) → \(exists ? "FOUND" : "not found")\n"
-            if exists && modelPath == nil {
+            let isValid = exists && modelCandidateIsValid(atPath: path)
+            let status = exists
+                ? (isValid ? "FOUND" : "FOUND but checksum failed")
+                : "not found"
+            log += "  \(path) → \(status)\n"
+            if isValid && modelPath == nil {
                 modelPath = path
             }
         }
         if modelPath == nil {
             log += "NOT FOUND in any path.\n"
-            cliError = "The speech model is not installed."
+            cliError = "The speech model is not installed or failed its integrity check."
             debugLog = log
             return
         }
@@ -188,6 +192,12 @@ class Transcriber: ObservableObject {
             + names.map { "\(base)/models/\($0)" }
     }
 
+    private func modelCandidateIsValid(atPath path: String) -> Bool {
+        let url = URL(fileURLWithPath: path)
+        guard url.lastPathComponent == ModelInstaller.modelFileName else { return true }
+        return ModelInstaller.modelFileIsValid(at: url)
+    }
+
     private func resourceBaseDir() -> String {
         if let env = ProcessInfo.processInfo.environment["PARROCCHETTAMI_HOME"] {
             return env
@@ -200,8 +210,68 @@ class Transcriber: ObservableObject {
 
     @MainActor
     private func decodeParakeetOutput(_ output: ProcessOutput) throws -> TranscriptionResult {
+        let decoded = try ParakeetOutputDecoder.decode(output)
+        debugLog = decoded.debugLog
+        return decoded.result
+    }
+}
+
+enum ParakeetOutputDecoder {
+    static func decode(_ output: ProcessOutput) throws -> (result: TranscriptionResult, debugLog: String) {
         let raw = output.text
-        let lines = raw.components(separatedBy: "\n")
+        let lines = filteredLines(from: raw)
+        let jsonCandidates = jsonObjects(in: raw)
+            + lines.filter { $0.hasPrefix("{") && $0.hasSuffix("}") }
+        let plainLines = lines.filter { !$0.hasPrefix("{") }.joined(separator: "\n")
+
+        let detail = """
+        Exit code: \(output.terminationStatus)
+        JSON candidates found: \(jsonCandidates.count)
+        Other lines: \(plainLines.isEmpty ? "none" : plainLines)
+        --- RAW FIRST 500 CHARS ---
+        \(String(raw.prefix(500)))
+        """
+
+        if output.terminationStatus != 0 {
+            throw TranscriberError.processFailed(detail)
+        }
+
+        var lastJSONError: Error?
+        for jsonObject in deduplicated(jsonCandidates) {
+            guard let jsonData = jsonObject.data(using: .utf8) else { continue }
+            do {
+                let resp = try JSONDecoder().decode(TranscriptionResponse.self, from: jsonData)
+                return (
+                    TranscriptionResult(
+                        text: resp.text,
+                        words: resp.words ?? [],
+                        frameSec: resp.frame_sec ?? 0.08
+                    ),
+                    detail
+                )
+            } catch {
+                lastJSONError = error
+            }
+        }
+
+        if let lastJSONError,
+           jsonCandidates.contains(where: { $0.contains("\"text\"") || $0.contains("\"words\"") }) {
+            throw TranscriberError.processFailed(
+                "JSON parse failed: \(lastJSONError.localizedDescription)\n\(detail)")
+        }
+
+        if !plainLines.isEmpty {
+            return (
+                TranscriptionResult(text: plainLines, words: [], frameSec: 0.08),
+                detail
+            )
+        } else {
+            throw TranscriberError.processFailed("No output from transcription.\n\(detail)")
+        }
+    }
+
+    private static func filteredLines(from raw: String) -> [String] {
+        raw.components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { line in
                 if line.isEmpty { return false }
@@ -210,42 +280,79 @@ class Transcriber: ObservableObject {
                 if line.hasPrefix("main:") { return false }
                 return true
             }
+    }
 
-        let jsonLine = lines.first(where: { $0.hasPrefix("{") }) ?? ""
-        let plainLines = lines.filter { !$0.hasPrefix("{") }.joined(separator: "\n")
+    private static func deduplicated(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
+    }
 
-        let detail = """
-        Exit code: \(output.terminationStatus)
-        JSON line found: \(jsonLine.isEmpty ? "NO" : "YES (\(jsonLine.prefix(80))...)")
-        Other lines: \(plainLines.isEmpty ? "none" : plainLines)
-        --- RAW FIRST 500 CHARS ---
-        \(String(raw.prefix(500)))
-        """
-        debugLog = detail
+    private static func jsonObjects(in raw: String) -> [String] {
+        var objects: [String] = []
+        var start: String.Index?
+        var depth = 0
+        var isInString = false
+        var isEscaped = false
 
-        if output.terminationStatus != 0 {
-            throw TranscriberError.processFailed(detail)
-        }
+        for index in raw.indices {
+            let char = raw[index]
 
-        if let jsonData = jsonLine.data(using: .utf8) {
-            do {
-                let resp = try JSONDecoder().decode(TranscriptionResponse.self, from: jsonData)
-                return TranscriptionResult(
-                    text: resp.text,
-                    words: resp.words ?? [],
-                    frameSec: resp.frame_sec ?? 0.08
-                )
-            } catch {
-                throw TranscriberError.processFailed(
-                    "JSON parse failed: \(error.localizedDescription)\nLine: \(jsonLine.prefix(200))")
+            if start == nil {
+                if char == "{" {
+                    start = index
+                    depth = 1
+                    isInString = false
+                    isEscaped = false
+                }
+                continue
+            }
+
+            if isEscaped {
+                isEscaped = false
+                continue
+            }
+
+            if char == "\\" {
+                isEscaped = isInString
+                continue
+            }
+
+            if char == "\"" {
+                isInString.toggle()
+                continue
+            }
+
+            guard !isInString else { continue }
+
+            if char == "{" {
+                depth += 1
+            } else if char == "}" {
+                depth -= 1
+                if depth == 0, let objectStart = start {
+                    objects.append(String(raw[objectStart...index]))
+                    Self.startOver(
+                        start: &start,
+                        depth: &depth,
+                        isInString: &isInString,
+                        isEscaped: &isEscaped
+                    )
+                }
             }
         }
 
-        if !plainLines.isEmpty {
-            return TranscriptionResult(text: plainLines, words: [], frameSec: 0.08)
-        } else {
-            throw TranscriberError.processFailed("No output from transcription.\n\(detail)")
-        }
+        return objects
+    }
+
+    private static func startOver(
+        start: inout String.Index?,
+        depth: inout Int,
+        isInString: inout Bool,
+        isEscaped: inout Bool
+    ) {
+        start = nil
+        depth = 0
+        isInString = false
+        isEscaped = false
     }
 }
 
