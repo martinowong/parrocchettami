@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reverse Image Launcher Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #647084;
+      --border: #d8dde6;
+      --accent: #1769e0;
+      --accent-dark: #0f54b8;
+      --warning-bg: #fff7db;
+      --warning-border: #ead48a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    main {
+      width: min(980px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 36px 0;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(28px, 4vw, 44px);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 28px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: 0 12px 32px rgba(23, 32, 51, 0.06);
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+
+    .drop {
+      display: grid;
+      place-items: center;
+      min-height: 220px;
+      margin-top: 14px;
+      border: 1px dashed #aab3c2;
+      border-radius: 8px;
+      background: #fbfcfe;
+      overflow: hidden;
+      text-align: center;
+    }
+
+    .drop.has-image {
+      border-style: solid;
+      background: #101827;
+    }
+
+    .drop img {
+      max-width: 100%;
+      max-height: 340px;
+      display: block;
+    }
+
+    .drop label {
+      display: grid;
+      gap: 8px;
+      cursor: pointer;
+      padding: 28px;
+      color: var(--muted);
+    }
+
+    input[type="file"] {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    input[type="url"] {
+      width: 100%;
+      margin-top: 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 13px 14px;
+      font: inherit;
+      color: var(--text);
+      background: #fff;
+    }
+
+    input[type="url"]:focus {
+      outline: 3px solid rgba(23, 105, 224, 0.18);
+      border-color: var(--accent);
+    }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    button, a.button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font: 700 14px/1.1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: #fff;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    button.primary {
+      color: #fff;
+      border-color: var(--accent);
+      background: var(--accent);
+    }
+
+    button.primary:hover {
+      background: var(--accent-dark);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.46;
+    }
+
+    .note {
+      margin-top: 16px;
+      border: 1px solid var(--warning-border);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--warning-bg);
+      color: #66572a;
+      font-size: 14px;
+    }
+
+    .status {
+      margin-top: 12px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .engines {
+      margin-top: 24px;
+    }
+
+    .engine-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .engine-row strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .engine-row span {
+      display: block;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    @media (max-width: 760px) {
+      main {
+        width: min(100% - 24px, 980px);
+        padding: 24px 0;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .buttons {
+        grid-template-columns: 1fr;
+      }
+
+      .engine-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Reverse Image Launcher</h1>
+    <p>A tiny demo of the safe version: preview a local image, or paste a public image URL and launch search engines in new tabs.</p>
+
+    <section class="grid" aria-label="Image inputs">
+      <div class="panel">
+        <h2>Local upload</h2>
+        <p>The image stays in this browser. External search engines cannot read a local file through a normal link.</p>
+
+        <div id="drop" class="drop">
+          <label>
+            <input id="fileInput" type="file" accept="image/*">
+            <strong>Choose an image</strong>
+            <span>or drag one here for preview</span>
+          </label>
+        </div>
+
+        <div class="buttons">
+          <button id="googleUpload">Open Google Lens</button>
+          <button id="bingUpload">Open Bing Visual Search</button>
+          <button id="yandexUpload">Open Yandex Images</button>
+          <button id="tineyeUpload">Open TinEye</button>
+        </div>
+
+        <div id="localStatus" class="status">No local image selected yet.</div>
+      </div>
+
+      <div class="panel">
+        <h2>Public URL launcher</h2>
+        <p>Use an image URL that starts with http:// or https://. This is the mode a real app would use after temporary hosting.</p>
+
+        <input id="imageUrl" type="url" placeholder="https://example.com/photo.jpg" autocomplete="off">
+        <div class="buttons">
+          <button id="openAll" class="primary">Open all search tabs</button>
+          <button id="copyLinks">Copy launcher links</button>
+        </div>
+
+        <div class="note">
+          Google Lens and Yandex URL formats are unofficial and can change. TinEye's URL launcher is the cleanest of this set. Bing reliably offers paste/upload on its Visual Search page.
+        </div>
+      </div>
+    </section>
+
+    <section class="panel engines" aria-label="Search engine launcher links">
+      <h2>Generated links</h2>
+      <div id="engineRows"></div>
+    </section>
+  </main>
+
+  <script>
+    const engines = [
+      {
+        name: "Google Lens",
+        note: "Attempts the upload-by-URL flow; falls back manually if Google changes the endpoint.",
+        url: imageUrl => `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(imageUrl)}`,
+        uploadPage: "https://lens.google.com/"
+      },
+      {
+        name: "Bing Visual Search",
+        note: "Opens Bing's visual search page. Paste/upload is the durable path.",
+        url: imageUrl => `https://www.bing.com/images/search?view=detailv2&iss=sbi&form=SBIIRP&q=imgurl:${encodeURIComponent(imageUrl)}`,
+        uploadPage: "https://www.bing.com/visualsearch"
+      },
+      {
+        name: "Yandex Images",
+        note: "Attempts Yandex image search with a URL parameter.",
+        url: imageUrl => `https://yandex.com/images/search?rpt=imageview&url=${encodeURIComponent(imageUrl)}`,
+        uploadPage: "https://yandex.com/images/"
+      },
+      {
+        name: "TinEye",
+        note: "Direct URL search launcher.",
+        url: imageUrl => `https://tineye.com/search?url=${encodeURIComponent(imageUrl)}`,
+        uploadPage: "https://tineye.com/"
+      }
+    ];
+
+    const fileInput = document.querySelector("#fileInput");
+    const drop = document.querySelector("#drop");
+    const localStatus = document.querySelector("#localStatus");
+    const imageUrlInput = document.querySelector("#imageUrl");
+    const engineRows = document.querySelector("#engineRows");
+
+    function validImageUrl() {
+      const value = imageUrlInput.value.trim();
+      if (!value) return "";
+
+      try {
+        const parsed = new URL(value);
+        return parsed.protocol === "http:" || parsed.protocol === "https:" ? value : "";
+      } catch {
+        return "";
+      }
+    }
+
+    function renderLinks() {
+      const imageUrl = validImageUrl();
+      engineRows.innerHTML = "";
+
+      engines.forEach(engine => {
+        const row = document.createElement("div");
+        row.className = "engine-row";
+
+        const text = document.createElement("div");
+        text.innerHTML = `<strong>${engine.name}</strong><span>${engine.note}</span>`;
+
+        const button = document.createElement("button");
+        button.textContent = imageUrl ? "Launch" : "Needs URL";
+        button.disabled = !imageUrl;
+        button.addEventListener("click", () => window.open(engine.url(imageUrl), "_blank", "noopener,noreferrer"));
+
+        row.append(text, button);
+        engineRows.append(row);
+      });
+    }
+
+    function showLocalFile(file) {
+      if (!file || !file.type.startsWith("image/")) {
+        localStatus.textContent = "Pick an image file to preview.";
+        return;
+      }
+
+      const previewUrl = URL.createObjectURL(file);
+      drop.classList.add("has-image");
+      drop.innerHTML = `<img alt="Selected local preview" src="${previewUrl}">`;
+      localStatus.textContent = `${file.name} is previewed locally. Use the buttons above, then upload/paste it on the search engine page.`;
+    }
+
+    fileInput.addEventListener("change", event => showLocalFile(event.target.files[0]));
+
+    drop.addEventListener("dragover", event => {
+      event.preventDefault();
+      drop.style.borderColor = "#1769e0";
+    });
+
+    drop.addEventListener("dragleave", () => {
+      drop.style.borderColor = "";
+    });
+
+    drop.addEventListener("drop", event => {
+      event.preventDefault();
+      drop.style.borderColor = "";
+      showLocalFile(event.dataTransfer.files[0]);
+    });
+
+    engines.forEach(engine => {
+      const id = `${engine.name.toLowerCase().split(" ")[0]}Upload`;
+      const button = document.querySelector(`#${id}`);
+      button.addEventListener("click", () => window.open(engine.uploadPage, "_blank", "noopener,noreferrer"));
+    });
+
+    imageUrlInput.addEventListener("input", renderLinks);
+
+    document.querySelector("#openAll").addEventListener("click", () => {
+      const imageUrl = validImageUrl();
+      if (!imageUrl) {
+        imageUrlInput.focus();
+        return;
+      }
+      engines.forEach(engine => window.open(engine.url(imageUrl), "_blank", "noopener,noreferrer"));
+    });
+
+    document.querySelector("#copyLinks").addEventListener("click", async () => {
+      const imageUrl = validImageUrl();
+      if (!imageUrl) {
+        imageUrlInput.focus();
+        return;
+      }
+
+      const links = engines.map(engine => `${engine.name}: ${engine.url(imageUrl)}`).join("\n");
+      await navigator.clipboard.writeText(links);
+      document.querySelector("#copyLinks").textContent = "Copied";
+      setTimeout(() => {
+        document.querySelector("#copyLinks").textContent = "Copy launcher links";
+      }, 1200);
+    });
+
+    renderLinks();
+  </script>
+</body>
+</html>
