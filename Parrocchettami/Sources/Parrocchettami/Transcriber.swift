@@ -125,7 +125,8 @@ class Transcriber: ObservableObject {
                 try await convertAudioTo16kHzMonoWAV(
                     sourceURL: tempFile,
                     destinationURL: wavFile,
-                    processRunner: processRunner
+                    processRunner: processRunner,
+                    resourceBaseDir: resourceBaseDir()
                 )
                 inputForCLI = wavFile
             } catch AudioConversionError.cancelled {

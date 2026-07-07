@@ -56,7 +56,7 @@ struct InputWorkspace: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text("WAV, MP3, M4A, FLAC, OGG, AIFF, AAC")
+                Text("WAV, MP3, M4A, FLAC, OGG, OPUS, AIFF, AAC")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

@@ -16,10 +16,16 @@ BIN_SRC="$(swift build -c release --show-bin-path)/Parrocchettami"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
+mkdir -p "$APP_BUNDLE/Contents/Resources/bin"
 
 cp "$BIN_SRC" "$APP_BUNDLE/Contents/MacOS/Parrocchettami"
 cp "$SCRIPT_DIR/LICENSE" "$APP_BUNDLE/Contents/Resources/LICENSE"
 cp "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$APP_BUNDLE/Contents/Resources/THIRD_PARTY_NOTICES.md"
+
+"$SCRIPT_DIR/scripts/bundle-opusdec.sh" "$APP_BUNDLE"
+if [ -f "$APP_BUNDLE/Contents/Resources/bin/opusdec" ]; then
+    codesign --force --sign - "$APP_BUNDLE/Contents/Resources/lib/"*.dylib "$APP_BUNDLE/Contents/Resources/bin/opusdec" >/dev/null 2>&1 || true
+fi
 
 # --- App Icon ---
 ICON_SOURCE="$SCRIPT_DIR/parrocchettami.icon"

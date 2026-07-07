@@ -1,5 +1,26 @@
 import Foundation
 
+protocol ProcessRunning {
+    func run(
+        executableURL: URL,
+        arguments: [String],
+        environment: [String: String]
+    ) async throws -> ProcessOutput
+}
+
+extension ProcessRunning {
+    func run(
+        executableURL: URL,
+        arguments: [String]
+    ) async throws -> ProcessOutput {
+        try await run(
+            executableURL: executableURL,
+            arguments: arguments,
+            environment: ProcessInfo.processInfo.environment
+        )
+    }
+}
+
 struct ProcessOutput {
     let terminationStatus: Int32
     let data: Data
@@ -23,7 +44,7 @@ enum ProcessRunnerError: LocalizedError {
     }
 }
 
-final class ProcessRunner {
+final class ProcessRunner: ProcessRunning {
     private let lock = NSLock()
     private var currentProcess: Process?
     private var cancellationRequested = false

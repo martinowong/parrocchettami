@@ -489,6 +489,7 @@ struct ContentView: View {
             .wav, .mp3, .mpeg4Audio,
             UTType(filenameExtension: "flac") ?? .audio,
             UTType(filenameExtension: "ogg") ?? .audio,
+            UTType(filenameExtension: "opus") ?? .audio,
             UTType(filenameExtension: "m4a") ?? .audio,
             UTType(filenameExtension: "aiff") ?? .audio,
             UTType(filenameExtension: "aac") ?? .audio
@@ -497,9 +498,9 @@ struct ContentView: View {
 
     private func setFile(_ url: URL, displayName: String? = nil) {
         let ext = url.pathExtension.lowercased()
-        let supported = ["wav", "wave", "mp3", "m4a", "flac", "ogg", "aiff", "aac"]
+        let supported = ["wav", "wave", "mp3", "m4a", "flac", "ogg", "opus", "aiff", "aac"]
         guard supported.contains(ext) else {
-            showError("“\(url.lastPathComponent)” is not a supported audio file.\nSupported formats: WAV, MP3, M4A, FLAC, OGG, AIFF, AAC.")
+            showError("“\(url.lastPathComponent)” is not a supported audio file.\nSupported formats: WAV, MP3, M4A, FLAC, OGG, OPUS, AIFF, AAC.")
             return
         }
 

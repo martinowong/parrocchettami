@@ -4,7 +4,7 @@ A native macOS app for local, offline audio transcription using NVIDIA Parakeet 
 
 ## Features
 
-- **Drag & drop or file picker** — WAV, MP3, M4A, FLAC, OGG, AIFF, AAC
+- **Drag & drop or file picker** — WAV, MP3, M4A, FLAC, OGG, OPUS, AIFF, AAC
 - **Live microphone recording** — real-time waveform, mic selector, pause/resume, timer
 - **Multilingual transcription** — 25 European languages via Parakeet TDT 0.6B v3 (auto-detect or manual)
 - **Three output formats**
@@ -23,6 +23,7 @@ A native macOS app for local, offline audio transcription using NVIDIA Parakeet 
 - Apple Silicon or Intel Mac
 - ~707 MB disk space for the speech model
 - ~3 MB for the parakeet-cli binary
+- `opusdec` for OPUS/WhatsApp audio files, either bundled at `bin/opusdec` or installed from `opus-tools`
 - Microphone permission (for recording mode only)
 
 ## Quick Start
@@ -74,7 +75,7 @@ Choose from 25 European languages in the header dropdown, or leave on **Auto-det
 
 Parrocchettami wraps [parakeet.cpp](https://github.com/mudler/parakeet.cpp) — a C++/ggml port of NVIDIA's Parakeet ASR models. When you start a transcription:
 
-1. Audio is converted to 16kHz mono WAV (using macOS `afconvert` if needed)
+1. Audio is converted to 16kHz mono WAV (`afconvert` for most formats, `opusdec` + `afconvert` for OPUS)
 2. `parakeet-cli` is called as a subprocess with the GGUF model and optional language flag
 3. JSON output (text + per-word timestamps) is parsed
 4. Results are formatted according to the selected output mode and grouping setting
@@ -129,6 +130,8 @@ make clean     # Remove build artifacts + downloaded dependencies
 **App won't open (Gatekeeper)** — Right-click the app → **Open** on first launch. The app is unsigned.
 
 **Language not working** — Ensure the language code is supported. See `ContentView.swift` → `supportedLanguages` for the full list.
+
+**OPUS/WhatsApp audio not converting** — Ensure `opusdec` is bundled in `bin/opusdec` or installed via `brew install opus-tools`.
 
 ## License
 

@@ -27,6 +27,8 @@ The app has two main modes:
 1. Transcribe an existing audio file.
 2. Record audio from the microphone and then transcribe it.
 
+Supported import formats include WAV, MP3, M4A, FLAC, OGG, OPUS, AIFF, and AAC.
+
 Supported exports:
 
 - Plain text

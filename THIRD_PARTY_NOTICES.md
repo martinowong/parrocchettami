@@ -48,3 +48,32 @@ https://creativecommons.org/licenses/by/4.0/
 The distributed file is a Q5_K quantized GGUF conversion named
 `tdt-0.6b-v3-q5_k.gguf`. Parrocchettami does not claim endorsement by NVIDIA,
 the parakeet.cpp authors, or the GGUF distributor.
+
+## Opus tools and libraries
+
+Source: https://opus-codec.org/
+
+Parrocchettami can bundle `opusdec` from Opus Tools to decode OPUS and
+WhatsApp voice-note audio before local transcription.
+
+Relevant bundled components may include:
+
+- opus-tools / opusdec - BSD-2-Clause
+- libopus - BSD-3-Clause
+- opusfile - BSD-3-Clause
+- libogg - BSD-3-Clause
+
+Copyright belongs to the Xiph.Org Foundation and the respective Opus/Xiph
+contributors. License texts and source distributions are available from the
+Opus and Xiph project sites.
+
+## OpenSSL
+
+Source: https://www.openssl.org/
+
+The bundled `opusdec` dependency chain may include OpenSSL 3 libraries when
+built from the Homebrew `opus-tools` package.
+
+OpenSSL 3 is licensed under the Apache License 2.0. Copyright belongs to the
+OpenSSL Project Authors. License text and source distributions are available
+from the OpenSSL project site.

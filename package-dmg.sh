@@ -64,11 +64,13 @@ mkdir -p "$WORK_DIR" "$DIST_DIR"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 mkdir -p "$APP_BUNDLE/Contents/Resources/bin"
+mkdir -p "$APP_BUNDLE/Contents/Resources/lib"
 
 /bin/cp -X "$APP_EXECUTABLE" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 /usr/bin/ditto "$SPARKLE_FRAMEWORK_SOURCE" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
 /bin/cp -X "$CLI_SOURCE" "$APP_BUNDLE/Contents/Resources/bin/parakeet-cli"
-chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME" "$APP_BUNDLE/Contents/Resources/bin/parakeet-cli"
+"$SCRIPT_DIR/scripts/bundle-opusdec.sh" "$APP_BUNDLE" --required
+chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME" "$APP_BUNDLE/Contents/Resources/bin/"*
 
 ICON_BUILD_DIR="$WORK_DIR/AppIconAssets"
 ICON_PARTIAL_PLIST="$WORK_DIR/AppIconPartial.plist"
@@ -144,10 +146,16 @@ xattr -cr "$APP_BUNDLE"
 
 echo "Signing nested CLI and app with identity: $SIGN_IDENTITY"
 codesign --force --deep --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+for dylib in "$APP_BUNDLE/Contents/Resources/lib/"*.dylib; do
+    [[ -e "$dylib" ]] || continue
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" "$dylib"
+done
 codesign --force --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Resources/bin/parakeet-cli"
+codesign --force --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Resources/bin/opusdec"
 codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign "$SIGN_IDENTITY" "$APP_BUNDLE"
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 codesign -d --entitlements :- "$APP_BUNDLE" 2>&1 | grep -q "com.apple.security.device.audio-input"
+codesign -d --entitlements :- "$APP_BUNDLE" 2>&1 | grep -q "com.apple.security.cs.disable-library-validation"
 
 mkdir -p "$STAGING_DIR"
 ditto "$APP_BUNDLE" "$STAGING_DIR/$APP_NAME.app"
