@@ -28,6 +28,19 @@ A native macOS app for local, offline audio transcription using NVIDIA Parakeet 
 - `opusdec` for OPUS/WhatsApp audio files, either bundled at `bin/opusdec` or installed from `opus-tools`
 - Microphone permission (for recording mode only)
 
+## Resource Usage
+
+| Resource | Estimate |
+|----------|----------|
+| **Disk** | ~707 MB model + ~3 MB CLI + ~30 MB app bundle |
+| **RAM (idle)** | ~50 MB (SwiftUI app, no model loaded) |
+| **RAM (transcribing)** | ~1–2 GB (model weights ~375 MB + KV cache / compute buffers) |
+| **CPU** | Low overall; bursts during `afconvert` and model loading |
+| **GPU** | Metal-accelerated inference on Apple Silicon; negligible on Intel |
+| **Disk I/O** | Model read once per transcription from SSD; audio copied to temp dir |
+
+RAM scales modestly with audio length — longer files produce larger KV caches, but the model weights dominate total usage. The model is loaded and freed per transcription job, not kept resident.
+
 ## Quick Start
 
 ```bash
