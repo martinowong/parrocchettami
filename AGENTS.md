@@ -19,8 +19,13 @@ User → SwiftUI App → parakeet-cli subprocess → GGUF model → JSON output 
 | Input workspace | `InputWorkspace.swift` | Record & file cards, waveform, mic selector, drop zone |
 | Status views | `StatusViews.swift` | Status badge, setup error view, transcription progress (with cancel + duration) |
 | Transcript view | `TranscriptView.swift` | Result display, format picker, grouping slider, copy/export, edit/search/undo |
+| Transcript search | `TranscriptSearch.swift` | Inline transcript text search with match navigation |
 | Recording | `AudioRecorder.swift` | `AVAudioEngine` tap → CAF → `afconvert` → 16kHz mono WAV, peak level metering, pause/resume, CoreAudio mic enumeration |
+| Audio conversion | `AudioConverter.swift` | Format detection & conversion: OPUS → `opusdec` → PCM → `afconvert` → 16kHz mono WAV; other formats → `afconvert` directly |
 | Transcription | `Transcriber.swift` | Resource discovery (`bin/parakeet-cli` + `models/*.gguf`), subprocess orchestration (with cancel), JSON parsing, output formatting, language parameter |
+| Process runner | `ProcessRunner.swift` | `ProcessRunning` protocol + `ProcessRunner` implementation, cancellation support, `ProcessOutput` type |
+| App updates | `AppUpdater.swift` | Sparkle framework integration for in-app update checks |
+| Model installer | `ModelInstaller.swift` | Downloads GGUF model from Hugging Face, verifies SHA256 checksum |
 | History | `HistoryManager.swift` | Persistent transcription history in `~/Library/Application Support/Parrocchettami/history.json`, Codable entries, CRUD operations |
 
 ### Data Flow
@@ -34,7 +39,9 @@ ContentView.setFile(url) → getDuration(url) → startTranscription(url, langua
     ▼
 Transcriber.transcribe(fileURL:language:)        [async throws, cancellable]
     ├── copy to temp dir (parrocchettami-transcribe/)
-    ├── afconvert if not WAV
+    ├── convertAudioTo16kHzMonoWAV()               [async, cancellable]
+    │   ├── OPUS:  opusdec → PCM → afconvert → WAV
+    │   └── other: afconvert → WAV
     ├── Process: parakeet-cli transcribe --model X --input X --json [--lang Y]
     ├── filter stderr (ggml_, [parakeet], main:)
     ├── find JSON line, decode → TranscriptionResponse
@@ -104,6 +111,23 @@ ContentView stores in HistoryManager, passes to TranscriptView
 - `.processFailed(String)` — subprocess error
 - `.cancelled` — user cancelled; no error message shown
 
+### ProcessRunner (ProcessRunning protocol)
+- `protocol ProcessRunning` — abstract interface for running subprocesses (enables testing)
+- `ProcessRunner` — `Process`-based implementation with cancellation via `Process.terminate()`
+- `ProcessOutput` — result value type: `terminationStatus`, `data`, computed `text`
+- `ProcessRunnerError.cancelled` — thrown when `cancel()` is called
+
+### AudioConverter
+- `convertAudioTo16kHzMonoWAV(sourceURL:destinationURL:processRunner:resourceBaseDir:allowSystemOpusDecoderFallback:)` async throws — orchestrates format-specific conversion
+- `locateOpusDecoder(resourceBaseDir:includeSystemFallbacks:)` → `URL?` — finds opusdec binary
+- `AudioConversionError` — `.opusdecFailed`, `.opusDecoderNotFound`, `.afconvertFailed`, `.cancelled`, etc.
+- OPUS audio path: detects `.opus` extension → runs `opusdec --quiet --rate 16000` → pipes to `afconvert`
+- All other formats: processes directly through `afconvert`
+
+### AppUpdater (ObservableObject)
+- wraps Sparkle's `SPUStandardUpdaterController` for in-app update checks
+- `@Published canCheckForUpdates: Bool` — bound to menu item & UI
+
 ## External Dependencies
 
 ### parakeet-cli (v0.4.0)
@@ -127,11 +151,23 @@ ContentView stores in HistoryManager, passes to TranscriptView
 - Recording: `afconvert -f WAVE -d LEI16@16000 -c 1 raw.caf output.wav`
 - Transcription: same args for non-WAV source files
 
+### opusdec (opus-tools)
+- Bundled by `scripts/bundle-opusdec.sh` into `.app` bundle at `Resources/bin/opusdec` + `Resources/lib/*.dylib`
+- Used for: decoding OPUS/WhatsApp voice note audio before afconvert
+- Install source: `brew install opus-tools` (used during packaging, then bundled)
+- Dependencies bundled: `libopus`, `opusfile`, `libogg`, `OpenSSL`
+
+### Sparkle (2.x)
+- Integrated via SwiftPM dependency: `https://github.com/sparkle-project/Sparkle`
+- In-app update check menu item, SparkleUpdater window, and `package-dmg.sh` signing
+- Public EdDSA key embedded in `package-dmg.sh`; appcast hosted at `https://martinowong.github.io/parrocchettami/appcast.xml`
+
 ## Build System
 
 - **Package manager:** SwiftPM (`Package.swift`, tools version 5.9, macOS 14+)
 - **Build:** `swift build -c release` → single executable
 - **Bundle:** `run.sh` manually constructs a `.app` bundle with `Info.plist`
+- **Release:** `package-dmg.sh` builds signed DMG with Sparkle, opusdec, and parakeet-cli bundled
 - **Icon:** `run.sh` compiles `parrocchettami.icon` with Xcode `actool` → `Assets.car` + `parrocchettami.icns`
 - **Launch:** `open <app_bundle>` (kills previous instances first, strips quarantine)
 
@@ -164,6 +200,7 @@ LSEnvironment: { PARROCCHETTAMI_HOME: <project root> }
 ## Features at a Glance
 
 - Two input modes: drag-and-drop file or live microphone recording
+- OPUS/WhatsApp voice note support via bundled `opusdec`
 - Pause/resume recording with separate "Done" button
 - Real-time waveform with peak-level metering (CoreAudio)
 - Audio duration estimation shown during transcription
@@ -173,6 +210,8 @@ LSEnvironment: { PARROCCHETTAMI_HOME: <project root> }
 - Language selection: auto-detect or 25 explicit European languages
 - Persistent transcription history with reopen, export, delete
 - Export as `.txt` or `.srt`
+- In-app updates via Sparkle framework
+- DMG distribution with bundled dependencies (Sparkle, opusdec)
 
 ## Known Limitations
 

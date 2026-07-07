@@ -5,6 +5,7 @@ A native macOS app for local, offline audio transcription using NVIDIA Parakeet 
 ## Features
 
 - **Drag & drop or file picker** — WAV, MP3, M4A, FLAC, OGG, OPUS, AIFF, AAC
+- **WhatsApp voice notes** — built-in OPUS decoding via bundled `opusdec`
 - **Live microphone recording** — real-time waveform, mic selector, pause/resume, timer
 - **Multilingual transcription** — 25 European languages via Parakeet TDT 0.6B v3 (auto-detect or manual)
 - **Three output formats**
@@ -14,6 +15,7 @@ A native macOS app for local, offline audio transcription using NVIDIA Parakeet 
 - **Cancel transcription** — abort long-running transcriptions
 - **Edit & search** — edit plain text results, undo edits (up to 50 steps), find text
 - **Persistent history** — recent transcriptions saved locally, reopen/export/delete
+- **In-app updates** — Sparkle-powered update checks for new releases
 - **Fast & local** — Metal-accelerated on Apple Silicon, everything stays on your Mac
 - **Copy & export** — copy to clipboard or save as `.txt` / `.srt`
 
@@ -85,25 +87,39 @@ The model loads into RAM for each transcription (Metal GPU-accelerated on Apple 
 ## Project Structure
 
 ```
-├── Parrocchettami/              # SwiftUI app source
+├── Parrocchettami/              # SwiftPM project
 │   ├── Package.swift
-│   └── Sources/Parrocchettami/
-│       ├── App.swift            # Entry point & window setup
-│       ├── ContentView.swift    # Top-level layout & state management
-│       ├── InputWorkspace.swift # Record/file cards, waveform, mic picker
-│       ├── StatusViews.swift    # Status badge, progress bar, setup error
-│       ├── TranscriptView.swift # Results, formatting, edit/search/undo
-│       ├── AudioRecorder.swift  # Mic capture, peak metering, pause/resume
-│       ├── Transcriber.swift    # CLI orchestration, JSON parsing, cancel
-│       └── HistoryManager.swift # Persistent transcription history
+│   ├── Sources/Parrocchettami/
+│   │   ├── App.swift            # Entry point & window setup
+│   │   ├── ContentView.swift    # Top-level layout & state management
+│   │   ├── InputWorkspace.swift # Record/file cards, waveform, mic picker
+│   │   ├── StatusViews.swift    # Status badge, progress bar, setup error
+│   │   ├── TranscriptView.swift # Results, formatting, edit/search/undo
+│   │   ├── TranscriptSearch.swift # Transcript text search
+│   │   ├── AudioRecorder.swift  # Mic capture, peak metering, pause/resume
+│   │   ├── AudioConverter.swift # Format conversion (afconvert, opusdec)
+│   │   ├── Transcriber.swift    # CLI orchestration, JSON parsing, cancel
+│   │   ├── ProcessRunner.swift  # Subprocess runner with cancellation
+│   │   ├── AppUpdater.swift     # Sparkle in-app update integration
+│   │   ├── ModelInstaller.swift # Model download & checksum verification
+│   │   └── HistoryManager.swift # Persistent transcription history
+│   └── Tests/
 ├── bin/                         # (downloaded) parakeet-cli binary
 ├── models/                      # (downloaded) GGUF speech model
+├── scripts/                     # Build/packaging helper scripts
+├── dmg/                         # DMG packaging assets (background)
+├── website/                     # Public beta website & appcast
+├── dist/                        # Release DMG artifacts
 ├── parrocchettami.icon/         # Icon Composer app icon source
+├── .github/workflows/           # CI: GitHub Pages deploy
 ├── setup.sh                     # One-time dependency download
 ├── run.sh                       # Build .app bundle & launch
+├── package-dmg.sh               # Release DMG build & signing
 ├── Makefile                     # Convenience targets
 ├── README.md                    # This file
-└── AGENTS.md                    # Developer/agent reference
+├── AGENTS.md                    # Developer/agent reference
+├── LICENSE
+└── THIRD_PARTY_NOTICES.md
 ```
 
 ## Build Targets

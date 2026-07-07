@@ -15,8 +15,9 @@ Parrocchettami turns audio into text locally on Apple Silicon Macs. It uses a lo
 - Developer: Martino Wong, also known as @oradecima
 - Developer site: https://oradecima.com
 - Source code: https://github.com/martinowong/parrocchettami
-- Public beta download: https://github.com/martinowong/parrocchettami/releases/download/v1.0.8-beta.1/Parrocchettami-1.0.8-Apple-Silicon.dmg
+- Public beta download: https://github.com/martinowong/parrocchettami/releases/download/v1.0.10/Parrocchettami-1.0.10-Apple-Silicon.dmg
 - Sparkle appcast: https://martinowong.github.io/parrocchettami/appcast.xml
+- Current version: 1.0.10 (public beta)
 
 ## What the app does
 
@@ -59,7 +60,7 @@ Parrocchettami uses NVIDIA Parakeet / parakeet.cpp and presents support for 25 E
 
 ## Installation notes
 
-Parrocchettami is distributed for macOS as an app/DMG-style install.
+Parrocchettami is distributed for macOS as an app/DMG-style install with Sparkle-powered in-app update checks.
 
 The app is not notarized yet. On first launch, macOS may show a warning such as "Apple non ha potuto verificare questa app". This warning means Apple has not verified the app through notarization; it is not a statement that the app contains malware.
 
