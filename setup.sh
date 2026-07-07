@@ -5,7 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_DIR="$SCRIPT_DIR/bin"
 MODELS_DIR="$SCRIPT_DIR/models"
 
-PARAKEET_VERSION="v0.3.2"
+PARAKEET_VERSION="v0.4.0"
+PARAKEET_VERSION_NUMBER="${PARAKEET_VERSION#v}"
 MODEL_FILE="tdt-0.6b-v3-q5_k.gguf"
 MODEL_URL="https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/$MODEL_FILE"
 MODEL_SHA256="5ebd1d55609b5ad9dac1c457eeb87a9904f199d6fbbb738453182d010646c2e4"
@@ -24,6 +25,11 @@ verify_sha256() {
     fi
 }
 
+is_expected_parakeet_version() {
+    local output="$1"
+    printf "%s" "$output" | grep -Eq "(^|[^0-9])v?${PARAKEET_VERSION_NUMBER}([^0-9]|$)"
+}
+
 echo "====== Parrocchettami Setup ======"
 echo ""
 
@@ -39,10 +45,10 @@ fi
 
 if [ "$ARCH" = "arm64" ]; then
     BINARY_ARCHIVE="parakeet-$PARAKEET_VERSION-bin-macos-metal-arm64.tar.gz"
-    BINARY_SHA256="665cc533f504e3ee1b887a42492176ce0aecdd38f692f5bbaefcab669471c035"
+    BINARY_SHA256="e607d8700bec29c5bf8fa2e8155adfbf92d4433d98608a9dd866633ea7d01767"
 elif [ "$ARCH" = "x86_64" ]; then
     BINARY_ARCHIVE="parakeet-$PARAKEET_VERSION-bin-macos-cpu-x64.tar.gz"
-    BINARY_SHA256="04ff73ed21b29bb9e05c5475c42128a523c399e084de312219b9fce1f6f4e179"
+    BINARY_SHA256="6f985e7a7185646e97a2d4fa7953b2019327ad56ad677f0602c666745d036a8d"
 else
     echo "ERROR: Unsupported architecture: $ARCH" >&2
     exit 1
@@ -57,9 +63,19 @@ echo ""
 
 # --- Download parakeet-cli ---
 CLI_PATH="$BIN_DIR/parakeet-cli"
+INSTALL_CLI=1
 if [ -f "$CLI_PATH" ] && [ -x "$CLI_PATH" ]; then
-    echo "parakeet-cli already installed. Skipping."
-else
+    CLI_VERSION_OUTPUT="$("$CLI_PATH" --version 2>&1 || true)"
+    if is_expected_parakeet_version "$CLI_VERSION_OUTPUT"; then
+        echo "parakeet-cli $PARAKEET_VERSION already installed. Skipping."
+        INSTALL_CLI=0
+    else
+        echo "Existing parakeet-cli is not $PARAKEET_VERSION; updating."
+        echo "Current version output: ${CLI_VERSION_OUTPUT:-unknown}"
+    fi
+fi
+
+if [ "$INSTALL_CLI" -eq 1 ]; then
     echo "--- Downloading parakeet-cli $PARAKEET_VERSION ---"
     ARCHIVE_PATH="$DOWNLOAD_DIR/$BINARY_ARCHIVE"
     EXTRACT_DIR="$DOWNLOAD_DIR/extracted"
@@ -77,7 +93,13 @@ else
     fi
     install -m 755 "$CLI_CANDIDATE" "$CLI_PATH"
     xattr -dr com.apple.quarantine "$CLI_PATH" 2>/dev/null || true
-    echo "parakeet-cli installed."
+    CLI_VERSION_OUTPUT="$("$CLI_PATH" --version 2>&1 || true)"
+    if ! is_expected_parakeet_version "$CLI_VERSION_OUTPUT"; then
+        echo "ERROR: Installed parakeet-cli does not report $PARAKEET_VERSION." >&2
+        echo "Version output: ${CLI_VERSION_OUTPUT:-unknown}" >&2
+        exit 1
+    fi
+    echo "parakeet-cli $PARAKEET_VERSION installed."
 fi
 
 # --- Download GGUF model ---

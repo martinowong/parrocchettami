@@ -6,6 +6,10 @@ PACKAGE_DIR="$SCRIPT_DIR/Parrocchettami"
 DIST_DIR="$SCRIPT_DIR/dist"
 VERSION="${1:-1.0.0}"
 APP_NAME="Parrocchettami"
+PARAKEET_VERSION="v0.4.0"
+PARAKEET_VERSION_NUMBER="${PARAKEET_VERSION#v}"
+SPARKLE_PUBLIC_ED_KEY="PEoX8+kHgqL9tcSGv8p8x268YAfyTHmEhzyrZ+AWXFg="
+SPARKLE_FEED_URL="https://martinowong.github.io/parrocchettami/appcast.xml"
 WORK_DIR="${TMPDIR:-/tmp}/parrocchettami-package-$VERSION"
 APP_BUNDLE="$WORK_DIR/$APP_NAME.app"
 STAGING_DIR="$WORK_DIR/dmg-root"
@@ -15,6 +19,7 @@ CLI_SOURCE="$SCRIPT_DIR/bin/parakeet-cli"
 ENTITLEMENTS="$PACKAGE_DIR/Parrocchettami.entitlements"
 ICON_SOURCE="$SCRIPT_DIR/parrocchettami.icon"
 SIGN_IDENTITY="${CODE_SIGN_IDENTITY:--}"
+SPARKLE_FRAMEWORK_SOURCE="$PACKAGE_DIR/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
     echo "ERROR: DMG packaging requires macOS."
@@ -26,12 +31,23 @@ if [[ "$(uname -m)" != "arm64" ]]; then
     exit 1
 fi
 
-for required in "$CLI_SOURCE" "$ENTITLEMENTS" "$ICON_SOURCE/icon.json" "$SCRIPT_DIR/dmg/background.tiff" "$SCRIPT_DIR/INSTALLATION.txt" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md"; do
-    if [[ ! -f "$required" ]]; then
+for required in "$CLI_SOURCE" "$ENTITLEMENTS" "$ICON_SOURCE/icon.json" "$SCRIPT_DIR/dmg/background.tiff" "$SCRIPT_DIR/INSTALLATION.txt" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$SPARKLE_FRAMEWORK_SOURCE"; do
+    if [[ ! -e "$required" ]]; then
         echo "ERROR: Missing required file: $required"
+        if [[ "$required" == "$SPARKLE_FRAMEWORK_SOURCE" ]]; then
+            echo "Run: cd \"$PACKAGE_DIR\" && swift package resolve"
+        fi
         exit 1
     fi
 done
+
+CLI_VERSION_OUTPUT="$("$CLI_SOURCE" --version 2>&1 || true)"
+if ! printf "%s" "$CLI_VERSION_OUTPUT" | grep -Eq "(^|[^0-9])v?${PARAKEET_VERSION_NUMBER}([^0-9]|$)"; then
+    echo "ERROR: $CLI_SOURCE must be parakeet-cli $PARAKEET_VERSION before packaging." >&2
+    echo "Version output: ${CLI_VERSION_OUTPUT:-unknown}" >&2
+    echo "Run ./setup.sh to download the expected parakeet.cpp release." >&2
+    exit 1
+fi
 
 echo "Building $APP_NAME $VERSION for Apple Silicon..."
 BUILD_ARGS=(--package-path "$PACKAGE_DIR" -c release)
@@ -46,9 +62,11 @@ rm -rf "$WORK_DIR"
 rm -f "$DMG_PATH" "$DMG_PATH.sha256"
 mkdir -p "$WORK_DIR" "$DIST_DIR"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
+mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 mkdir -p "$APP_BUNDLE/Contents/Resources/bin"
 
 /bin/cp -X "$APP_EXECUTABLE" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+/usr/bin/ditto "$SPARKLE_FRAMEWORK_SOURCE" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
 /bin/cp -X "$CLI_SOURCE" "$APP_BUNDLE/Contents/Resources/bin/parakeet-cli"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME" "$APP_BUNDLE/Contents/Resources/bin/parakeet-cli"
 
@@ -108,6 +126,10 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <string>14.0</string>
     <key>LSArchitecturePriority</key>
     <array><string>arm64</string></array>
+    <key>SUFeedURL</key>
+    <string>$SPARKLE_FEED_URL</string>
+    <key>SUPublicEDKey</key>
+    <string>$SPARKLE_PUBLIC_ED_KEY</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
@@ -121,6 +143,7 @@ plutil -lint "$ENTITLEMENTS"
 xattr -cr "$APP_BUNDLE"
 
 echo "Signing nested CLI and app with identity: $SIGN_IDENTITY"
+codesign --force --deep --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
 codesign --force --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Resources/bin/parakeet-cli"
 codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign "$SIGN_IDENTITY" "$APP_BUNDLE"
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"

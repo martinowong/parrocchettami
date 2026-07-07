@@ -146,7 +146,12 @@ struct InputWorkspace: View {
         .disabled(!isReady || isTranscribing)
         .focused($focusedControl, equals: .recording)
         .focusEffectDisabled()
-        .focusable(true)
+        .focusable(!recorder.isRecording)
+        .onChange(of: recorder.isRecording) { _, isRecording in
+            if isRecording && focusedControl == .recording {
+                focusedControl = nil
+            }
+        }
         .onKeyPress(.space) {
             onToggleRecording()
             return .handled

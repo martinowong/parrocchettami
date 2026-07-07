@@ -106,10 +106,10 @@ ContentView stores in HistoryManager, passes to TranscriptView
 
 ## External Dependencies
 
-### parakeet-cli (v0.3.2)
-- Downloaded from: `https://github.com/mudler/parakeet.cpp/releases/tag/v0.3.2`
-- macOS Metal arm64: `parakeet-v0.3.2-bin-macos-metal-arm64.tar.gz`
-- macOS CPU x64: `parakeet-v0.3.2-bin-macos-cpu-x64.tar.gz`
+### parakeet-cli (v0.4.0)
+- Downloaded from: `https://github.com/mudler/parakeet.cpp/releases/tag/v0.4.0`
+- macOS Metal arm64: `parakeet-v0.4.0-bin-macos-metal-arm64.tar.gz`
+- macOS CPU x64: `parakeet-v0.4.0-bin-macos-cpu-x64.tar.gz`
 - Expected location: `$PROJECT_ROOT/bin/parakeet-cli`
 - CLI usage: `parakeet-cli transcribe --model <model.gguf> --input <audio.wav> --json [--lang <locale>]`
 - JSON output format: `{"text":"...","frame_sec":0.08,"words":[{"w":"...","start":0.0,"end":0.32,"conf":0.99},...]}`

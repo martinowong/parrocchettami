@@ -4,6 +4,7 @@ import AVFoundation
 
 struct ContentView: View {
     @EnvironmentObject private var transcriber: Transcriber
+    @EnvironmentObject private var appUpdater: AppUpdater
     @StateObject private var recorder = AudioRecorder()
     @StateObject private var history = HistoryManager()
     @StateObject private var modelInstaller = ModelInstaller()
@@ -169,7 +170,11 @@ struct ContentView: View {
         .help("Credits and licenses")
         .accessibilityLabel("Credits and licenses")
         .popover(isPresented: $showCredits, arrowEdge: .bottom) {
-            CreditsView()
+            CreditsView(
+                parakeetVersion: transcriber.parakeetVersion,
+                canCheckForUpdates: appUpdater.canCheckForUpdates,
+                onCheckForUpdates: appUpdater.checkForUpdates
+            )
         }
     }
 
@@ -652,6 +657,10 @@ private final class InitialFocusClearingNSView: NSView {
 }
 
 private struct CreditsView: View {
+    let parakeetVersion: String
+    let canCheckForUpdates: Bool
+    let onCheckForUpdates: () -> Void
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -675,6 +684,10 @@ private struct CreditsView: View {
                     ]
                 )
 
+                Text("Engine version: \(parakeetVersion)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 credit(
                     title: "NVIDIA Parakeet TDT 0.6B v3",
                     description: "Speech-recognition model by NVIDIA, distributed here as a Q5_K GGUF conversion by mudler.",
@@ -688,6 +701,10 @@ private struct CreditsView: View {
                 Text("Parrocchettami is not endorsed by NVIDIA, the parakeet.cpp authors, or the GGUF distributor.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Button("Check for Updates...", action: onCheckForUpdates)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canCheckForUpdates)
             }
             .padding(20)
         }

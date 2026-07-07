@@ -8,6 +8,7 @@ class Transcriber: ObservableObject {
     @Published var transcriptionResult: TranscriptionResult?
     @Published var cliError: String?
     @Published var debugLog: String = ""
+    @Published var parakeetVersion: String = "Unknown"
 
     private var cliPath: String?
     private var modelPath: String?
@@ -39,8 +40,13 @@ class Transcriber: ObservableObject {
             log += "NOT FOUND in any path.\n"
             cliError = "The bundled transcription engine is missing."
             debugLog = log
+            parakeetVersion = "Unknown"
             return
         }
+        let engineVersion = Self.readParakeetVersion(atPath: cliPath!)
+        parakeetVersion = engineVersion
+        log += "Version: \(engineVersion)\n"
+
         let modelCandidates = modelSearchPaths()
         log += "\nLooking for model:\n"
         for path in modelCandidates {
@@ -206,6 +212,27 @@ class Transcriber: ObservableObject {
             return resources
         }
         return FileManager.default.currentDirectoryPath
+    }
+
+    private static func readParakeetVersion(atPath path: String) -> String {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = ["--version"]
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return "Unknown"
+        }
+
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let output, !output.isEmpty else { return "Unknown" }
+        return output.components(separatedBy: .newlines).first ?? output
     }
 
     @MainActor
