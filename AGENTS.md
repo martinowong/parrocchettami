@@ -213,6 +213,24 @@ LSEnvironment: { PARROCCHETTAMI_HOME: <project root> }
 - In-app updates via Sparkle framework
 - DMG distribution with bundled dependencies (Sparkle, opusdec)
 
+## Security Notes
+
+### `com.apple.security.cs.disable-library-validation` Entitlement
+
+Parrocchettami bundles ad-hoc signed binaries (opusdec, parakeet-cli, and their transitive dylibs) and loads Sparkle.framework. Without a Developer ID, library validation would reject these because the signing identities don't match.
+
+**Risk containment:** the unsigned dylibs (libopus, libogg, libssl, libcrypto) are loaded only by the opusdec subprocess — a short-lived child process that only has access to the audio file being converted. The main app process never loads them. Subprocess environments are restricted to only the variables needed (`minimalSubprocessEnvironment()` in `ProcessRunner.swift`).
+
+If you obtain a Developer ID, sign everything under one team identity and remove this key from the entitlements.
+
+### Other Hardening
+
+- Subprocesses receive restricted environments (no shell secrets inherited)
+- Transcription history is `chmod 600` on disk
+- System opusdec fallback is disabled during transcription (bundle only)
+- Model downloads are SHA256-verified before installation
+- `NSAppTransportSecurity` with `NSAllowsArbitraryLoads: false` is declared
+
 ## Known Limitations
 
 - **No speaker diarization** — Parakeet TDT is ASR only, not speaker identification
