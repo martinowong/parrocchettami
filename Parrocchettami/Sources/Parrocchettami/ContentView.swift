@@ -25,6 +25,7 @@ struct ContentView: View {
     @State private var retryFileDisplayName: String?
     @State private var lastRecordingConversionError: String?
     @State private var showClearHistoryConfirmation = false
+    @State private var showDeleteEntryConfirmation: HistoryEntry?
     @State private var showAllHistory = false
     @State private var showDiscardRecordingConfirmation = false
     @State private var historySearchText = ""
@@ -66,7 +67,7 @@ struct ContentView: View {
                         if transcriber.cliError?.localizedCaseInsensitiveContains("model") == true {
                             ModelSetupView(installer: modelInstaller)
                         } else if let error = transcriber.cliError {
-                            SetupRequiredView(message: error, onRetry: { transcriber.locateCLI() })
+                            SetupRequiredView(message: error, onRetry: { Task { await transcriber.locateCLI() } })
                         }
                     }
 
@@ -153,8 +154,27 @@ struct ContentView: View {
         } message: {
             Text("This stops recording and deletes the current take.")
         }
+        .confirmationDialog(
+            "Delete transcription?",
+            isPresented: Binding(
+                get: { showDeleteEntryConfirmation != nil },
+                set: { if !$0 { showDeleteEntryConfirmation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let entry = showDeleteEntryConfirmation {
+                Button("Delete", role: .destructive) {
+                    history.delete(entry)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let entry = showDeleteEntryConfirmation {
+                Text("The transcription of \"\(entry.fileName)\" will be permanently removed.")
+            }
+        }
         .onChange(of: modelInstaller.isInstalled) { _, installed in
-            if installed { transcriber.locateCLI() }
+            if installed { Task { await transcriber.locateCLI() } }
         }
     }
 
@@ -350,7 +370,7 @@ struct ContentView: View {
                             exportResult(display, format: .plain)
                         },
                         onArchive: { history.archive(entry) },
-                        onDelete: { history.delete(entry) }
+                        onDelete: { showDeleteEntryConfirmation = entry }
                     )
                 }
             }

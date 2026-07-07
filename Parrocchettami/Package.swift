@@ -5,7 +5,7 @@ let package = Package(
     name: "Parrocchettami",
     platforms: [.macOS(.v14)],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.4"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", "2.9.4"..<"3.0.0"),
     ],
     targets: [
         .executableTarget(

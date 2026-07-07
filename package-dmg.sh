@@ -136,6 +136,11 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Parrocchettami needs microphone access to record audio for local transcription.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+    </dict>
 </dict>
 </plist>
 PLIST

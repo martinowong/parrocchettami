@@ -4,6 +4,19 @@
     <dict>
     <key>com.apple.security.device.audio-input</key>
     <true/>
+    <!--
+     Parrocchettami bundles ad-hoc signed binaries (opusdec, parakeet-cli, and their
+     transitive dylibs) and loads Sparkle.framework. Without a Developer ID, library
+     validation would reject these because the signing identities don't match.
+ 
+     Risk containment: the unsigned dylibs (libopus, libogg, libssl, libcrypto) are
+     loaded only by the opusdec subprocess -- a short-lived child process that only
+     has access to the audio file being converted. The main app process never loads
+     them. Subprocess environments are also restricted to only the variables needed.
+ 
+     If you obtain a Developer ID, sign everything under one team identity and remove
+     this key.
+    -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
     </dict>

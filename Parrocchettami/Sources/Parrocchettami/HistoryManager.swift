@@ -85,6 +85,7 @@ class HistoryManager: ObservableObject {
 
             do {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                setRestrictivePermissions(directory: dir)
             } catch {
                 lastError = "Cannot create history folder: \(error.localizedDescription)"
             }
@@ -150,11 +151,23 @@ class HistoryManager: ObservableObject {
                 at: storageURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
+            setRestrictivePermissions(directory: storageURL.deletingLastPathComponent())
             let data = try JSONEncoder().encode(entries)
             try data.write(to: storageURL, options: .atomic)
+            setRestrictiveFilePermissions()
             lastError = nil
         } catch {
             lastError = "Cannot save transcription history: \(error.localizedDescription)"
         }
+    }
+
+    private func setRestrictivePermissions(directory: URL) {
+        let attrs: [FileAttributeKey: Any] = [.posixPermissions: NSNumber(value: 0o700)]
+        try? FileManager.default.setAttributes(attrs, ofItemAtPath: directory.path)
+    }
+
+    private func setRestrictiveFilePermissions() {
+        let attrs: [FileAttributeKey: Any] = [.posixPermissions: NSNumber(value: 0o600)]
+        try? FileManager.default.setAttributes(attrs, ofItemAtPath: storageURL.path)
     }
 }

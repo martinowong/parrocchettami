@@ -20,6 +20,11 @@ final class ModelInstaller: NSObject, ObservableObject {
         delegateQueue: nil
     )
 
+    private var resumeDataURL: URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("parrocchettami-model-download-resume")
+    }
+
     override init() {
         isInstalled = Self.modelFileIsValid(at: Self.installedModelURL)
         super.init()
@@ -39,13 +44,24 @@ final class ModelInstaller: NSObject, ObservableObject {
         progress = 0
         isDownloading = true
 
-        let task = session.downloadTask(with: Self.modelURL)
+        let task: URLSessionDownloadTask
+        if let resumeData = try? Data(contentsOf: resumeDataURL) {
+            task = session.downloadTask(withResumeData: resumeData)
+        } else {
+            task = session.downloadTask(with: Self.modelURL)
+        }
         downloadTask = task
         task.resume()
     }
 
     func cancelDownload() {
-        downloadTask?.cancel()
+        downloadTask?.cancel { [self] resumeData in
+            if let resumeData {
+                try? resumeData.write(to: resumeDataURL, options: .atomic)
+            } else {
+                try? FileManager.default.removeItem(at: resumeDataURL)
+            }
+        }
         downloadTask = nil
         isDownloading = false
         progress = 0
@@ -141,6 +157,7 @@ extension ModelInstaller: URLSessionDownloadDelegate {
     ) {
         do {
             try installDownloadedFile(from: location)
+            try? FileManager.default.removeItem(at: resumeDataURL)
             DispatchQueue.main.async {
                 self.downloadTask = nil
                 self.progress = 1
@@ -164,6 +181,10 @@ extension ModelInstaller: URLSessionDownloadDelegate {
         didCompleteWithError error: Error?
     ) {
         guard let error, (error as NSError).code != NSURLErrorCancelled else { return }
+        let nsError = error as NSError
+        if let resumeData = nsError.userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
+            try? resumeData.write(to: resumeDataURL, options: .atomic)
+        }
         DispatchQueue.main.async {
             self.downloadTask = nil
             self.isDownloading = false

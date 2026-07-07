@@ -15,7 +15,7 @@ struct ParrocchettamiApp: App {
                 .environmentObject(transcriber)
                 .environmentObject(appUpdater)
                 .frame(minWidth: 760, minHeight: 620)
-                .onAppear { transcriber.locateCLI() }
+                .onAppear { Task { await transcriber.locateCLI() } }
         }
         .commands {
             CommandGroup(after: .appInfo) {

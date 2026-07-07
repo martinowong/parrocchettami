@@ -13,15 +13,18 @@ class Transcriber: ObservableObject {
     private var cliPath: String?
     private var modelPath: String?
     private let processRunner = ProcessRunner()
+    private let cancelLock = NSLock()
+    private var pendingCancel = false
 
     func cancel() {
         guard isTranscribing else { return }
+        cancelLock.withLock { pendingCancel = true }
         processRunner.cancel()
         isTranscribing = false
         transcriptionPhase = .idle
     }
 
-    func locateCLI() {
+    func locateCLI() async {
         cliReady = false
         cliError = nil
         cliPath = nil
@@ -43,7 +46,7 @@ class Transcriber: ObservableObject {
             parakeetVersion = "Unknown"
             return
         }
-        let engineVersion = Self.readParakeetVersion(atPath: cliPath!)
+        let engineVersion = await Self.readParakeetVersion(atPath: cliPath!)
         parakeetVersion = engineVersion
         log += "Version: \(engineVersion)\n"
 
@@ -73,6 +76,10 @@ class Transcriber: ObservableObject {
     }
 
     func transcribe(fileURL: URL, language: String = "") async throws -> TranscriptionResult {
+        if cancelLock.withLock({ pendingCancel }) {
+            throw TranscriberError.cancelled
+        }
+
         guard let cli = cliPath, let model = modelPath else {
             let msg = "Not ready: CLI=\(cliPath ?? "nil") Model=\(modelPath ?? "nil")"
             await logError(msg)
@@ -84,6 +91,7 @@ class Transcriber: ObservableObject {
             transcriptionPhase = .preparing
         }
         defer {
+            cancelLock.withLock { pendingCancel = false }
             Task { @MainActor in
                 isTranscribing = false
                 transcriptionPhase = .idle
@@ -126,7 +134,8 @@ class Transcriber: ObservableObject {
                     sourceURL: tempFile,
                     destinationURL: wavFile,
                     processRunner: processRunner,
-                    resourceBaseDir: resourceBaseDir()
+                    resourceBaseDir: resourceBaseDir(),
+                    allowSystemOpusDecoderFallback: false
                 )
                 inputForCLI = wavFile
             } catch AudioConversionError.cancelled {
@@ -215,25 +224,20 @@ class Transcriber: ObservableObject {
         return FileManager.default.currentDirectoryPath
     }
 
-    private static func readParakeetVersion(atPath path: String) -> String {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = ["--version"]
-        process.standardOutput = pipe
-        process.standardError = pipe
-
+    private static func readParakeetVersion(atPath path: String) async -> String {
+        let runner = ProcessRunner()
         do {
-            try process.run()
-            process.waitUntilExit()
+            let output = try await runner.run(
+                executableURL: URL(fileURLWithPath: path),
+                arguments: ["--version"]
+            )
+            guard output.terminationStatus == 0 else { return "Unknown" }
+            let text = output.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return "Unknown" }
+            return text.components(separatedBy: .newlines).first ?? text
         } catch {
             return "Unknown"
         }
-
-        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let output, !output.isEmpty else { return "Unknown" }
-        return output.components(separatedBy: .newlines).first ?? output
     }
 
     @MainActor

@@ -145,10 +145,9 @@ class AudioRecorder: NSObject, ObservableObject {
         let wavURL = rawURL.deletingLastPathComponent().appendingPathComponent("recording.wav")
 
         Task(priority: .userInitiated) {
-            defer { try? FileManager.default.removeItem(at: rawURL) }
-
             do {
                 try await convertAudioTo16kHzMonoWAV(sourceURL: rawURL, destinationURL: wavURL)
+                try? FileManager.default.removeItem(at: rawURL)
                 await MainActor.run { completion(wavURL, nil) }
             } catch {
                 let message = "Recording conversion failed: \(error.localizedDescription)"

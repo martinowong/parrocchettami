@@ -16,9 +16,21 @@ extension ProcessRunning {
         try await run(
             executableURL: executableURL,
             arguments: arguments,
-            environment: ProcessInfo.processInfo.environment
+            environment: minimalSubprocessEnvironment()
         )
     }
+}
+
+func minimalSubprocessEnvironment() -> [String: String] {
+    var env: [String: String] = [:]
+    if let home = ProcessInfo.processInfo.environment["PARROCCHETTAMI_HOME"] {
+        env["PARROCCHETTAMI_HOME"] = home
+    }
+    env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+    if let dyldFallback = ProcessInfo.processInfo.environment["DYLD_FALLBACK_LIBRARY_PATH"] {
+        env["DYLD_FALLBACK_LIBRARY_PATH"] = dyldFallback
+    }
+    return env
 }
 
 struct ProcessOutput {
