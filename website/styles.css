@@ -79,10 +79,9 @@ a {
 }
 
 .brand-mark img {
-  width: 45px;
-  height: 45px;
-  object-fit: cover;
-  object-position: 57% 43%;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .nav-links {
@@ -366,18 +365,19 @@ h1 {
 
 .hero-visual::before {
   position: absolute;
-  inset: 34px 0 34px 72px;
+  inset: 54px 8px 46px 72px;
   z-index: -2;
-  border-radius: 48% 52% 48% 52%;
+  border-radius: 52% 48% 54% 46%;
   background:
-    linear-gradient(130deg, rgba(233, 248, 222, 0.92), rgba(255, 255, 255, 0.72)),
-    radial-gradient(circle at 70% 20%, rgba(18, 106, 216, 0.12), transparent 18rem);
+    radial-gradient(circle at 56% 44%, rgba(255, 217, 31, 0.34), transparent 15rem),
+    radial-gradient(circle at 68% 58%, rgba(55, 164, 71, 0.18), transparent 18rem);
+  filter: blur(4px);
   content: "";
 }
 
 .hero-visual::after {
   position: absolute;
-  inset: 122px 28px auto 18px;
+  inset: 112px 28px auto 14px;
   z-index: -1;
   height: 180px;
   border-top: 1px solid rgba(55, 164, 71, 0.22);
@@ -396,69 +396,19 @@ h1 {
 
 .brand-object {
   position: absolute;
-  top: 24px;
-  right: 38px;
+  top: 0;
+  right: -18px;
   display: grid;
-  width: min(420px, 74%);
-  aspect-ratio: 1;
-  overflow: hidden;
-  border-radius: 32px;
+  width: min(520px, 92%);
+  aspect-ratio: 743 / 600;
   place-items: center;
-  background: #ffffff;
-  box-shadow: var(--shadow);
+  filter: drop-shadow(0 34px 40px rgba(36, 87, 42, 0.22));
 }
 
 .brand-object img {
-  width: 114%;
-  height: 114%;
-  object-fit: cover;
-  object-position: 58% 43%;
-}
-
-.signal-card {
-  position: absolute;
-  border: 1px solid rgba(220, 232, 218, 0.92);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: 0 20px 60px rgba(34, 76, 36, 0.13);
-  backdrop-filter: blur(22px);
-}
-
-.audio-card {
-  left: 10px;
-  top: 98px;
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  width: min(310px, 58vw);
-  padding: 16px;
-}
-
-.audio-card strong,
-.audio-card span {
-  display: block;
-}
-
-.file-type {
-  display: grid;
-  width: 54px;
-  height: 54px;
-  border-radius: 8px;
-  background: #eff8ed;
-  color: var(--green-dark);
-  font-size: 13px;
-  font-weight: 850;
-  place-items: center;
-}
-
-.audio-card strong {
-  font-size: 15px;
-}
-
-.audio-card div span {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 13px;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .transcript-label,
@@ -711,23 +661,21 @@ h1 {
 }
 
 .feature-icon {
+  position: relative;
   display: grid;
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  background: var(--bg-soft);
-  color: var(--green-dark);
+  width: 52px;
+  height: 52px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: 0 10px 24px rgba(36, 87, 42, 0.15);
   place-items: center;
 }
 
-.feature-icon svg {
-  width: 24px;
-  height: 24px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
+.feature-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .feature-list h3 {
@@ -814,55 +762,51 @@ h1 {
   cursor: grabbing;
 }
 
-.flag-ring span {
-  --flag-lift: 0px;
+.flag-ring > span {
+  --flag-radius-push: 0px;
   --flag-scale: 1;
   position: absolute;
   display: grid;
   width: 38px;
   height: 38px;
   cursor: grab;
-  font-size: 26px;
-  filter: drop-shadow(0 7px 10px rgba(28, 70, 33, 0.12));
   pointer-events: none;
   transform:
     rotate(calc(360deg / var(--flag-count) * var(--i) + var(--orbit-angle)))
-    translate(var(--orbit-radius))
+    translate(calc(var(--orbit-radius) + var(--flag-radius-push)))
     rotate(calc(-360deg / var(--flag-count) * var(--i) - var(--orbit-angle)));
-  scale: var(--flag-scale);
-  translate: 0 var(--flag-lift);
   transition:
-    scale 260ms cubic-bezier(0.2, 1.28, 0.32, 1),
-    translate 260ms cubic-bezier(0.2, 1.28, 0.32, 1),
-    filter 200ms ease;
-  will-change: scale, translate;
+    transform 70ms cubic-bezier(0.16, 1.4, 0.26, 1);
+  will-change: transform;
   place-items: center;
 }
 
-.flag-ring.is-dragging span {
+.flag-emoji {
+  display: block;
+  font-size: 26px;
+  filter: drop-shadow(0 7px 10px rgba(28, 70, 33, 0.12));
+  line-height: 1;
+  transform: scale(var(--flag-scale));
+  transform-origin: center;
+  transition:
+    transform 70ms cubic-bezier(0.16, 1.4, 0.26, 1),
+    filter 120ms ease;
+  will-change: transform;
+}
+
+.flag-ring.is-dragging > span {
   cursor: grabbing;
 }
 
-.flag-ring span.is-hovered {
-  --flag-lift: -2px;
-  --flag-scale: 2.18;
+.flag-ring > span.is-active {
   z-index: 25;
+}
+
+.flag-ring > span.is-active .flag-emoji {
   filter: drop-shadow(0 18px 24px rgba(28, 70, 33, 0.22));
 }
 
-.flag-ring span.is-neighbor {
-  --flag-lift: -1px;
-  --flag-scale: 1.18;
-  z-index: 18;
-}
-
-.flag-ring span.is-near {
-  --flag-lift: 0px;
-  --flag-scale: 1.04;
-  z-index: 12;
-}
-
-.flag-ring span::after {
+.flag-ring > span::after {
   position: absolute;
   z-index: 30;
   left: 50%;
@@ -884,14 +828,14 @@ h1 {
   box-shadow: 0 12px 28px rgba(28, 70, 33, 0.12);
 }
 
-.flag-ring span.is-hovered::after,
-.flag-ring span:hover::after,
-.flag-ring span:focus-visible::after {
+.flag-ring > span.is-active::after,
+.flag-ring > span:hover::after,
+.flag-ring > span:focus-visible::after {
   opacity: 1;
   transform: translate(-50%, 0);
 }
 
-.flag-ring span:focus-visible {
+.flag-ring > span:focus-visible {
   outline: 2px solid rgba(255, 217, 31, 0.82);
   outline-offset: 4px;
 }
@@ -1498,11 +1442,6 @@ h1 {
   .brand-object {
     right: 0;
     width: min(320px, 88%);
-    border-radius: 24px;
-  }
-
-  .audio-card {
-    top: 88px;
   }
 
   .pipeline {

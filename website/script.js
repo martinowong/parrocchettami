@@ -17,6 +17,7 @@ if (voiceWaveforms.length > 0) {
   let nextNoiseChange = 0;
   let scroll = 0;
   let isSpeaking = false;
+  let syllablePhase = 0;
 
   const random = () => {
     seed = (seed * 1664525 + 1013904223) % 4294967296;
@@ -29,11 +30,14 @@ if (voiceWaveforms.length > 0) {
     return current + (target - current) * (1 - Math.exp(-deltaSeconds / response));
   };
 
+  syllablePhase = randomBetween(0, Math.PI * 2);
+
   const oscillators = [
-    { cycles: 1.35, targetCycles: 1.35, amp: 0.42, targetAmp: 0.42, phase: randomBetween(0, Math.PI * 2), speed: 0.24 },
-    { cycles: 2.05, targetCycles: 2.05, amp: 0.31, targetAmp: 0.31, phase: randomBetween(0, Math.PI * 2), speed: 0.34 },
-    { cycles: 3.2, targetCycles: 3.2, amp: 0.2, targetAmp: 0.2, phase: randomBetween(0, Math.PI * 2), speed: 0.52 },
-    { cycles: 4.6, targetCycles: 4.6, amp: 0.1, targetAmp: 0.1, phase: randomBetween(0, Math.PI * 2), speed: 0.7 }
+    { cycles: 1.75, targetCycles: 1.75, amp: 0.36, targetAmp: 0.36, phase: randomBetween(0, Math.PI * 2), speed: 0.36 },
+    { cycles: 3.2, targetCycles: 3.2, amp: 0.32, targetAmp: 0.32, phase: randomBetween(0, Math.PI * 2), speed: 0.62 },
+    { cycles: 6.4, targetCycles: 6.4, amp: 0.2, targetAmp: 0.2, phase: randomBetween(0, Math.PI * 2), speed: 1.12 },
+    { cycles: 9.4, targetCycles: 9.4, amp: 0.1, targetAmp: 0.1, phase: randomBetween(0, Math.PI * 2), speed: 1.28 },
+    { cycles: 12.8, targetCycles: 12.8, amp: 0.045, targetAmp: 0.045, phase: randomBetween(0, Math.PI * 2), speed: 1.55 }
   ];
 
   const waveformLayers = voiceWaveforms.map((element, index) => ({
@@ -54,39 +58,50 @@ if (voiceWaveforms.length > 0) {
     isSpeaking = !isSpeaking;
 
     if (isSpeaking) {
-      targetEnergy = randomBetween(0.48, 0.86);
-      targetFrequencyBias = randomBetween(0.98, 1.16);
-      nextSpeechChange = time + randomBetween(280, 780);
+      targetEnergy = randomBetween(0.74, 1.08);
+      targetFrequencyBias = randomBetween(1.14, 1.38);
+      nextSpeechChange = time + randomBetween(280, 720);
     } else {
-      targetEnergy = randomBetween(0.14, 0.28);
-      targetFrequencyBias = randomBetween(0.88, 1);
-      nextSpeechChange = time + randomBetween(260, 620);
+      targetEnergy = randomBetween(0.06, 0.2);
+      targetFrequencyBias = randomBetween(0.86, 1.04);
+      nextSpeechChange = time + randomBetween(160, 380);
     }
+  };
+
+  const primeSpeech = (time) => {
+    isSpeaking = true;
+    energy = randomBetween(0.72, 0.96);
+    targetEnergy = randomBetween(0.86, 1.12);
+    frequencyBias = randomBetween(1.14, 1.32);
+    targetFrequencyBias = randomBetween(1.18, 1.42);
+    nextSpeechChange = time + randomBetween(340, 760);
+    scroll = randomBetween(0.12, 0.82);
+    syllablePhase = randomBetween(0, Math.PI * 2);
   };
 
   const updateOscillatorTargets = (time) => {
     if (time < nextOscillatorChange) return;
 
     oscillators.forEach((oscillator, index) => {
-      const baseCycles = [1.35, 2.05, 3.2, 4.6][index];
-      const baseAmp = [0.42, 0.31, 0.2, 0.1][index];
-      oscillator.targetCycles = baseCycles * randomBetween(0.92, 1.08);
-      oscillator.targetAmp = baseAmp * randomBetween(0.86, 1.14);
+      const baseCycles = [1.75, 3.2, 6.4, 9.4, 12.8][index];
+      const baseAmp = [0.36, 0.32, 0.2, 0.1, 0.045][index];
+      oscillator.targetCycles = baseCycles * randomBetween(0.9, 1.12);
+      oscillator.targetAmp = baseAmp * randomBetween(0.82, 1.24);
     });
 
-    nextOscillatorChange = time + randomBetween(1300, 2400);
+    nextOscillatorChange = time + randomBetween(760, 1400);
   };
 
   const updateNoise = (time, deltaSeconds) => {
     if (time > nextNoiseChange) {
       noiseNodes.forEach((node) => {
-        node.target = randomBetween(-0.13, 0.13);
+        node.target = randomBetween(-0.2, 0.2);
       });
-      nextNoiseChange = time + randomBetween(760, 1300);
+      nextNoiseChange = time + randomBetween(340, 720);
     }
 
     noiseNodes.forEach((node) => {
-      node.value = interpolate(node.value, node.target, deltaSeconds, 0.72);
+      node.value = interpolate(node.value, node.target, deltaSeconds, 0.42);
     });
   };
 
@@ -123,13 +138,14 @@ if (voiceWaveforms.length > 0) {
     updateOscillatorTargets(time);
     updateNoise(time, deltaSeconds);
 
-    energy = interpolate(energy, targetEnergy, deltaSeconds, isSpeaking ? 0.2 : 0.32);
-    frequencyBias = interpolate(frequencyBias, targetFrequencyBias, deltaSeconds, 0.62);
-    scroll += deltaSeconds * (0.16 + energy * 0.34);
+    energy = interpolate(energy, targetEnergy, deltaSeconds, isSpeaking ? 0.2 : 0.3);
+    frequencyBias = interpolate(frequencyBias, targetFrequencyBias, deltaSeconds, 0.46);
+    scroll += deltaSeconds * (0.22 + energy * 0.48);
+    syllablePhase += deltaSeconds * (isSpeaking ? 5.6 : 2.4);
 
     oscillators.forEach((oscillator) => {
-      oscillator.cycles = interpolate(oscillator.cycles, oscillator.targetCycles, deltaSeconds, 1.6);
-      oscillator.amp = interpolate(oscillator.amp, oscillator.targetAmp, deltaSeconds, 1);
+      oscillator.cycles = interpolate(oscillator.cycles, oscillator.targetCycles, deltaSeconds, 0.72);
+      oscillator.amp = interpolate(oscillator.amp, oscillator.targetAmp, deltaSeconds, 0.46);
       oscillator.phase += deltaSeconds * oscillator.speed * frequencyBias * Math.PI * 2;
     });
 
@@ -139,7 +155,14 @@ if (voiceWaveforms.length > 0) {
       const flowPosition = progress + scroll + layer.flowOffset;
       const edgeFade = Math.sin(progress * Math.PI) ** 0.72;
       const idleBreath = 0.78 + Math.sin(time * 0.00105 + layer.phaseOffset) * 0.1;
-      const amplitude = (8 + energy * 44) * idleBreath * edgeFade * layer.ampScale;
+      const syllable =
+        0.58 +
+        Math.max(0, Math.sin(flowPosition * Math.PI * 2 * 3.35 - syllablePhase + layer.phaseOffset)) ** 2.15 * 0.58;
+      const plosive =
+        Math.max(0, Math.sin(flowPosition * Math.PI * 2 * 6.4 + syllablePhase * 0.95 + layer.phaseOffset)) ** 5.4 *
+        energy *
+        0.26;
+      const amplitude = (6 + energy * 58) * idleBreath * edgeFade * (syllable + plosive) * layer.ampScale;
 
       const oscillatorSignal = oscillators.reduce((sum, oscillator, oscillatorIndex) => {
         const phaseOffset = oscillatorIndex * 0.73 + layer.phaseOffset;
@@ -147,8 +170,8 @@ if (voiceWaveforms.length > 0) {
       }, 0);
 
       const perturbation =
-        Math.sin(flowPosition * Math.PI * 2 * 6.4 + time * 0.0013 + layer.phaseOffset) * 0.025 +
-        noiseAt(flowPosition * 0.62 + layer.phaseOffset * 0.08) * layer.noiseScale;
+        Math.sin(flowPosition * Math.PI * 2 * 18.5 + time * 0.006 + layer.phaseOffset) * 0.035 * energy +
+        noiseAt(flowPosition * 0.94 + layer.phaseOffset * 0.08) * layer.noiseScale;
 
       const y = centerY + layer.yOffset + (oscillatorSignal + perturbation) * amplitude;
 
@@ -167,8 +190,9 @@ if (voiceWaveforms.length > 0) {
     }
   };
 
-  setSpeechTarget(performance.now());
-  drawWaveform(performance.now());
+  const startTime = performance.now();
+  primeSpeech(startTime);
+  drawWaveform(startTime);
 }
 
 const formatCards = document.querySelectorAll(".format-card");
@@ -184,7 +208,7 @@ const languageOrbit = document.querySelector(".language-orbit");
 const flagRing = document.querySelector(".flag-ring");
 
 if (languageOrbit && flagRing) {
-  const flagItems = Array.from(flagRing.querySelectorAll("span"));
+  const flagItems = Array.from(flagRing.children);
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const normalVelocity = reducedMotion ? 0 : 10;
   const returnStrength = 0.85;
@@ -233,36 +257,48 @@ if (languageOrbit && flagRing) {
     return pointerMetrics(event).angle;
   };
 
-  const nearestFlagIndex = (event) => {
+  const pointerFlagIndex = (event) => {
     const step = 360 / flagItems.length;
     const angle = pointerAngle(event);
     const relativeAngle = ((angle - orbitAngle) % 360 + 360) % 360;
 
-    return Math.round(relativeAngle / step) % flagItems.length;
+    return relativeAngle / step;
   };
 
   const setOrbitAngle = () => {
     languageOrbit.style.setProperty("--orbit-angle", `${orbitAngle}deg`);
   };
 
-  const clearFlagFocus = () => {
+  const resetFlagMagnification = () => {
     flagItems.forEach((flag) => {
-      flag.classList.remove("is-hovered", "is-neighbor", "is-near");
+      flag.classList.remove("is-active");
+      flag.style.removeProperty("--flag-scale");
+      flag.style.removeProperty("--flag-radius-push");
     });
   };
 
-  const setFlagFocus = (activeIndex) => {
+  const circularIndexDistance = (index, targetIndex, count) => {
+    const distance = Math.abs(index - targetIndex);
+    return Math.min(distance, count - distance);
+  };
+
+  const applyDockMagnification = (targetIndex) => {
     const count = flagItems.length;
+    const range = 2.65;
+    const maxScale = 2.75;
+    const maxPush = 24;
+    const nearestIndex = Math.round(targetIndex) % count;
 
     flagItems.forEach((flag, index) => {
-      const distance = Math.min(
-        Math.abs(index - activeIndex),
-        count - Math.abs(index - activeIndex)
-      );
+      const distance = circularIndexDistance(index, targetIndex, count);
+      const influence = Math.max(0, 1 - distance / range);
+      const eased = influence * influence * (3 - 2 * influence);
+      const scale = 1 + (maxScale - 1) * eased;
+      const radiusPush = maxPush * eased;
 
-      flag.classList.toggle("is-hovered", distance === 0);
-      flag.classList.toggle("is-neighbor", distance === 1);
-      flag.classList.toggle("is-near", distance === 2);
+      flag.style.setProperty("--flag-scale", scale.toFixed(3));
+      flag.style.setProperty("--flag-radius-push", `${radiusPush.toFixed(2)}px`);
+      flag.classList.toggle("is-active", index === nearestIndex);
     });
   };
 
@@ -280,14 +316,14 @@ if (languageOrbit && flagRing) {
   };
 
   flagItems.forEach((flag, index) => {
-    flag.addEventListener("focus", () => setFlagFocus(index));
-    flag.addEventListener("blur", clearFlagFocus);
+    flag.addEventListener("focus", () => applyDockMagnification(index));
+    flag.addEventListener("blur", resetFlagMagnification);
   });
 
   flagRing.addEventListener("pointerleave", () => {
     if (!isDragging) {
       flagRing.classList.remove("can-drag");
-      clearFlagFocus();
+      resetFlagMagnification();
     }
   });
 
@@ -296,7 +332,7 @@ if (languageOrbit && flagRing) {
 
     event.preventDefault();
     isDragging = true;
-    setFlagFocus(nearestFlagIndex(event));
+    applyDockMagnification(pointerFlagIndex(event));
     lastPointerAngle = pointerAngle(event);
     lastPointerTime = performance.now();
     velocity = 0;
@@ -310,9 +346,9 @@ if (languageOrbit && flagRing) {
       flagRing.classList.toggle("can-drag", canDrag);
 
       if (canDrag) {
-        setFlagFocus(nearestFlagIndex(event));
+        applyDockMagnification(pointerFlagIndex(event));
       } else {
-        clearFlagFocus();
+        resetFlagMagnification();
       }
 
       return;
@@ -328,7 +364,7 @@ if (languageOrbit && flagRing) {
     lastPointerAngle = currentAngle;
     lastPointerTime = currentTime;
     setOrbitAngle();
-    setFlagFocus(nearestFlagIndex(event));
+    applyDockMagnification(pointerFlagIndex(event));
   });
 
   const endDrag = (event) => {

@@ -1,0 +1,24 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Parrocchettami</title>
+        <item>
+            <title>1.0.8</title>
+            <pubDate>Tue, 07 Jul 2026 11:32:29 +0200</pubDate>
+            <link>https://martinowong.github.io/parrocchettami/</link>
+            <sparkle:version>1.0.8</sparkle:version>
+            <sparkle:shortVersionString>1.0.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[# Parrocchettami 1.0.8 Public Beta
+
+- Adds Sparkle in-app update checks.
+- Updates parakeet.cpp to v0.4.0.
+- Shows the Parakeet engine version in the app info popover.
+- Fixes the double focus ring on the paused recording card.
+- Includes the refreshed public beta website assets.
+]]></description>
+            <enclosure url="https://github.com/martinowong/parrocchettami/releases/download/v1.0.8-beta.1/Parrocchettami-1.0.8-Apple-Silicon.dmg" length="8729826" type="application/octet-stream" sparkle:edSignature="v03grsdmIAwyFunE6KrvK6KSciY7Md40f/FaY9Ze7aiaSYlyBBq3g/W17D6wf2nsZxMsLNVMt8VC1dfvCuSvBQ=="/>
+        </item>
+    </channel>
+</rss>
