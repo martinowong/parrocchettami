@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct StatusBadge: View {
+    @Environment(\.interfaceZoom) private var interfaceZoom
+
     let isReady: Bool
     let isWorking: Bool
     let hasError: Bool
@@ -25,11 +27,11 @@ struct StatusBadge: View {
             } else {
                 Circle()
                     .fill(color)
-                    .frame(width: 7, height: 7)
+                    .frame(width: 7 * interfaceZoom, height: 7 * interfaceZoom)
             }
 
             Text(label)
-                .font(.caption.weight(.medium))
+                .font(.system(size: 11 * interfaceZoom, weight: .medium))
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 2)

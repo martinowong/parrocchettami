@@ -121,10 +121,8 @@ The model loads into RAM for each transcription (Metal GPU-accelerated on Apple 
 ├── models/                      # (downloaded) GGUF speech model
 ├── scripts/                     # Build/packaging helper scripts
 ├── dmg/                         # DMG packaging assets (background)
-├── website/                     # Public beta website & appcast
 ├── dist/                        # Release DMG artifacts
 ├── parrocchettami.icon/         # Icon Composer app icon source
-├── .github/workflows/           # CI: GitHub Pages deploy
 ├── setup.sh                     # One-time dependency download
 ├── run.sh                       # Build .app bundle & launch
 ├── package-dmg.sh               # Release DMG build & signing

@@ -9,7 +9,7 @@ APP_NAME="Parrocchettami"
 PARAKEET_VERSION="v0.4.0"
 PARAKEET_VERSION_NUMBER="${PARAKEET_VERSION#v}"
 SPARKLE_PUBLIC_ED_KEY="PEoX8+kHgqL9tcSGv8p8x268YAfyTHmEhzyrZ+AWXFg="
-SPARKLE_FEED_URL="https://martinowong.github.io/parrocchettami/appcast.xml"
+SPARKLE_FEED_URL="https://martinowong.github.io/parrocchettami-site/appcast.xml"
 WORK_DIR="${TMPDIR:-/tmp}/parrocchettami-package-$VERSION"
 APP_BUNDLE="$WORK_DIR/$APP_NAME.app"
 STAGING_DIR="$WORK_DIR/dmg-root"
@@ -17,6 +17,7 @@ TEMP_DMG="$WORK_DIR/$APP_NAME-$VERSION-Apple-Silicon.dmg"
 DMG_PATH="$DIST_DIR/$APP_NAME-$VERSION-Apple-Silicon.dmg"
 CLI_SOURCE="$SCRIPT_DIR/bin/parakeet-cli"
 ENTITLEMENTS="$PACKAGE_DIR/Parrocchettami.entitlements"
+HELPER_ENTITLEMENTS="$PACKAGE_DIR/Helper.entitlements"
 ICON_SOURCE="$SCRIPT_DIR/parrocchettami.icon"
 SIGN_IDENTITY="${CODE_SIGN_IDENTITY:--}"
 SPARKLE_FRAMEWORK_SOURCE="$PACKAGE_DIR/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
@@ -31,7 +32,7 @@ if [[ "$(uname -m)" != "arm64" ]]; then
     exit 1
 fi
 
-for required in "$CLI_SOURCE" "$ENTITLEMENTS" "$ICON_SOURCE/icon.json" "$SCRIPT_DIR/dmg/background.tiff" "$SCRIPT_DIR/INSTALLATION.txt" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$SPARKLE_FRAMEWORK_SOURCE"; do
+for required in "$CLI_SOURCE" "$ENTITLEMENTS" "$HELPER_ENTITLEMENTS" "$ICON_SOURCE/icon.json" "$SCRIPT_DIR/dmg/background.tiff" "$SCRIPT_DIR/INSTALLATION.txt" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$SPARKLE_FRAMEWORK_SOURCE"; do
     if [[ ! -e "$required" ]]; then
         echo "ERROR: Missing required file: $required"
         if [[ "$required" == "$SPARKLE_FRAMEWORK_SOURCE" ]]; then
@@ -147,16 +148,24 @@ PLIST
 
 plutil -lint "$APP_BUNDLE/Contents/Info.plist"
 plutil -lint "$ENTITLEMENTS"
+plutil -lint "$HELPER_ENTITLEMENTS"
 xattr -cr "$APP_BUNDLE"
 
 echo "Signing nested CLI and app with identity: $SIGN_IDENTITY"
 codesign --force --deep --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+# parakeet-cli from GitHub release — ad-hoc sign it so codesign --verify passes
+codesign --remove-signature "$APP_BUNDLE/Contents/Resources/bin/parakeet-cli" 2>/dev/null || true
+codesign --force --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Resources/bin/parakeet-cli"
 for dylib in "$APP_BUNDLE/Contents/Resources/lib/"*.dylib; do
     [[ -e "$dylib" ]] || continue
-    codesign --force --options runtime --sign "$SIGN_IDENTITY" "$dylib"
+    codesign --remove-signature "$dylib" 2>/dev/null || true
+    codesign --force --sign "$SIGN_IDENTITY" "$dylib"
+    codesign --verify --strict --verbose=2 "$dylib"
 done
-codesign --force --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Resources/bin/parakeet-cli"
-codesign --force --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Resources/bin/opusdec"
+codesign --remove-signature "$APP_BUNDLE/Contents/Resources/bin/opusdec" 2>/dev/null || true
+codesign --force --options runtime --entitlements "$HELPER_ENTITLEMENTS" --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Resources/bin/opusdec"
+codesign --verify --strict --verbose=2 "$APP_BUNDLE/Contents/Resources/bin/opusdec"
+codesign -d --entitlements :- "$APP_BUNDLE/Contents/Resources/bin/opusdec" 2>&1 | grep -q "com.apple.security.cs.disable-library-validation"
 codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign "$SIGN_IDENTITY" "$APP_BUNDLE"
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 codesign -d --entitlements :- "$APP_BUNDLE" 2>&1 | grep -q "com.apple.security.device.audio-input"

@@ -44,4 +44,20 @@ final class HistoryEntryTests: XCTestCase {
         XCTAssertEqual(decoded.fileName, "legacy.wav")
         XCTAssertFalse(decoded.isArchived)
     }
+
+    func testRenameOnlyChangesTheTargetEntry() throws {
+        let storageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("history.json")
+        defer { try? FileManager.default.removeItem(at: storageURL.deletingLastPathComponent()) }
+        let manager = HistoryManager(storageURL: storageURL)
+        let result = TranscriptionResult(text: "Example", words: [], frameSec: 0.08)
+        let first = manager.add(from: result, fileName: "First")
+        let second = manager.add(from: result, fileName: "Second")
+
+        manager.rename(first, to: "Renamed First")
+
+        XCTAssertEqual(manager.entries.first(where: { $0.id == first.id })?.fileName, "Renamed First")
+        XCTAssertEqual(manager.entries.first(where: { $0.id == second.id })?.fileName, "Second")
+    }
 }

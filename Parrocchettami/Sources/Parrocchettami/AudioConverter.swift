@@ -41,6 +41,22 @@ private func convertOpusTo16kHzMonoWAV(
         throw AudioConversionError.opusDecoderNotFound
     }
 
+    guard let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path),
+          let fileSize = attrs[.size] as? Int, fileSize > 0 else {
+        throw AudioConversionError.invalidSource
+    }
+
+    let handle = try FileHandle(forReadingFrom: sourceURL)
+    let headerBytes = try handle.read(upToCount: 64) ?? Data()
+    try handle.close()
+    let headerHex = headerBytes.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ")
+    let headerStr = String(data: headerBytes.prefix(16), encoding: .utf8) ?? "(binary)"
+    let isOgg = headerBytes.prefix(4) == Data([0x4f, 0x67, 0x67, 0x53])
+
+    if !isOgg {
+        throw AudioConversionError.invalidOpusFormat(fileSize: fileSize, headerHex: headerHex, headerStr: headerStr)
+    }
+
     let decodedURL = destinationURL
         .deletingLastPathComponent()
         .appendingPathComponent("opus-decoded-\(UUID().uuidString).wav")
@@ -51,7 +67,6 @@ private func convertOpusTo16kHzMonoWAV(
         output = try await processRunner.run(
             executableURL: opusdecURL,
             arguments: [
-                "--quiet",
                 "--rate", "16000",
                 sourceURL.path,
                 decodedURL.path
@@ -156,6 +171,8 @@ enum AudioConversionError: LocalizedError {
     case afconvertFailed(Int32, String?)
     case cancelled
     case invalidOutput
+    case invalidSource
+    case invalidOpusFormat(fileSize: Int, headerHex: String, headerStr: String)
     case launchFailed(String)
     case opusdecFailed(Int32, String?)
     case opusDecoderNotFound
@@ -169,6 +186,10 @@ enum AudioConversionError: LocalizedError {
             return nil
         case .invalidOutput:
             return "Audio conversion produced an empty file"
+        case .invalidSource:
+            return "The audio file is empty or inaccessible"
+        case .invalidOpusFormat(let size, let hex, let str):
+            return "File is not a valid OGG Opus audio file (\(size) bytes). Header: \(hex) — \"\(str)\""
         case .launchFailed(let message):
             return "Cannot run audio converter: \(message)"
         case .opusdecFailed(let code, let message):

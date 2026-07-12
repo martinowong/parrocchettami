@@ -2,7 +2,7 @@ import Foundation
 
 struct HistoryEntry: Identifiable, Codable {
     let id: UUID
-    let fileName: String
+    var fileName: String
     let text: String
     let words: [TimedWord]
     let frameSec: Double
@@ -93,7 +93,8 @@ class HistoryManager: ObservableObject {
         load()
     }
 
-    func add(from result: TranscriptionResult, fileName: String, audioDuration: TimeInterval? = nil) {
+    @discardableResult
+    func add(from result: TranscriptionResult, fileName: String, audioDuration: TimeInterval? = nil) -> HistoryEntry {
         let entry = HistoryEntry(
             id: UUID(),
             fileName: fileName,
@@ -106,6 +107,7 @@ class HistoryManager: ObservableObject {
         entries.insert(entry, at: 0)
         if entries.count > 100 { entries = Array(entries.prefix(100)) }
         save()
+        return entry
     }
 
     func delete(_ entry: HistoryEntry) {
@@ -125,6 +127,15 @@ class HistoryManager: ObservableObject {
             audioDuration: entry.audioDuration,
             isArchived: true
         )
+        save()
+    }
+
+    func rename(_ entry: HistoryEntry, to newName: String) {
+        let trimmedName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty,
+              let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
+
+        entries[index].fileName = trimmedName
         save()
     }
 

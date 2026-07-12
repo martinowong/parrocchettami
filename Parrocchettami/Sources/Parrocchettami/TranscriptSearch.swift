@@ -7,10 +7,14 @@ enum TranscriptSearch {
     }
 
     static func matchCount(in text: String, query: String) -> Int {
-        let query = normalizedQuery(query)
-        guard !query.isEmpty else { return 0 }
+        matchRanges(in: text, query: query).count
+    }
 
-        var count = 0
+    static func matchRanges(in text: String, query: String) -> [Range<String.Index>] {
+        let query = normalizedQuery(query)
+        guard !query.isEmpty else { return [] }
+
+        var ranges: [Range<String.Index>] = []
         var searchStart = text.startIndex
         while searchStart < text.endIndex,
               let range = text.range(
@@ -18,11 +22,11 @@ enum TranscriptSearch {
                 options: [.caseInsensitive, .diacriticInsensitive],
                 range: searchStart..<text.endIndex
               ) {
-            count += 1
+            ranges.append(range)
             searchStart = range.upperBound
         }
 
-        return count
+        return ranges
     }
 
     static func highlightedText(_ text: String, query: String) -> AttributedString {
@@ -36,7 +40,8 @@ enum TranscriptSearch {
                 of: query,
                 options: [.caseInsensitive, .diacriticInsensitive]
               ) {
-            attributed[range].backgroundColor = Color.yellow.opacity(0.35)
+            attributed[range].backgroundColor = Color.accentColor.opacity(0.22)
+            attributed[range].foregroundColor = .primary
             searchStart = range.upperBound
         }
 

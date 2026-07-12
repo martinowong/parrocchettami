@@ -1,11 +1,18 @@
 import SwiftUI
 
 struct TranscriptView: View {
+    @Environment(\.interfaceZoom) private var interfaceZoom
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let result: TranscriptionResult
+    let title: String
+    let durationText: String?
+    let languageName: String
     @Binding var outputFormat: OutputFormat
     @Binding var grouping: Double
     let onCopy: (String) -> Void
     let onSave: (String, OutputFormat) -> Void
+    let onRename: (String) -> Void
 
     @State private var editedText: String = ""
     @State private var hasEdits = false
@@ -14,8 +21,13 @@ struct TranscriptView: View {
     @State private var showSearch = false
     @State private var undoStack: [String] = []
     @State private var isEditing = false
+    @State private var pendingRichTextAction: RichTextAction?
+    @State private var isRenamingTitle = false
+    @State private var titleDraft = ""
+    @State private var showsCharacterCount = false
     @FocusState private var isFocused: Bool
     @FocusState private var isSearchFocused: Bool
+    @FocusState private var isTitleFocused: Bool
 
     private var displayText: String {
         hasEdits ? editedText : formattedText
@@ -39,32 +51,31 @@ struct TranscriptView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            controls
-                .padding(16)
+            documentControls
+                .padding(.horizontal, 30)
+                .padding(.top, 18)
 
-            Divider()
-
-            if showSearch {
-                searchBar
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                Divider()
+            if outputFormat != .plain {
+                phraseLengthControl
+                    .padding(.horizontal, 30)
+                    .padding(.top, 12)
             }
 
             textArea
         }
-        .background(Color(nsColor: .textBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.secondary.opacity(0.16))
-        )
-        .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .focusedSceneValue(\.findInTranscriptAction, toggleSearch)
         .onChange(of: formattedText) { _, new in
             if !hasEdits { editedText = new }
         }
         .onAppear {
             if editedText.isEmpty { editedText = formattedText }
+        }
+        .onChange(of: title) { _, newTitle in
+            if !isRenamingTitle {
+                titleDraft = newTitle
+            }
         }
         .onChange(of: showSearch) { _, isShown in
             if isShown {
@@ -76,12 +87,13 @@ struct TranscriptView: View {
     }
 
     private var searchBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 8 * interfaceZoom) {
             Image(systemName: "magnifyingglass")
+                .font(.system(size: 13 * interfaceZoom, weight: .medium))
                 .foregroundStyle(.secondary)
             TextField("Find in transcript", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.caption)
+                .font(.system(size: 12 * interfaceZoom))
                 .focused($isSearchFocused)
                 .accessibilityLabel("Find in transcript")
             if !trimmedSearchText.isEmpty {
@@ -100,17 +112,30 @@ struct TranscriptView: View {
                 .accessibilityLabel("Clear search")
             }
         }
+        .padding(.horizontal, 12 * interfaceZoom)
+        .padding(.vertical, 8 * interfaceZoom)
+        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var textArea: some View {
         ScrollView {
-            Group {
-                if outputFormat == .plain {
-                    if isEditing {
-                        TextEditor(text: $editedText)
-                            .font(.system(size: 14))
+            VStack(alignment: .leading, spacing: 0) {
+                documentHeader
+                Divider()
+                    .padding(.top, 18)
+                    .padding(.bottom, 22)
+
+                Group {
+                    if outputFormat == .plain {
+                        RichTextEditor(
+                            text: $editedText,
+                            action: $pendingRichTextAction,
+                            isEditable: isEditing,
+                            searchText: searchText,
+                            onFormattingChange: { hasEdits = true }
+                        )
                             .focused($isFocused)
-                            .accessibilityLabel("Transcript editor")
+                            .accessibilityLabel(isEditing ? "Transcript editor" : "Transcript")
                             .onChange(of: editedText) { old, new in
                                 if new != old && new != formattedText {
                                     undoStack.append(old)
@@ -118,147 +143,332 @@ struct TranscriptView: View {
                                     hasEdits = true
                                 }
                             }
+                            .frame(minHeight: 280)
                     } else {
-                        Text(highlightedTranscript(displayText))
-                            .font(.system(size: 14))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        transcriptText(formattedText)
                     }
-                } else {
-                    Text(highlightedTranscript(formattedText))
-                        .font(outputFormat == .srt
-                              ? .system(size: 12, design: .monospaced)
-                              : .system(size: 14))
-                        .foregroundStyle(formattedText.isEmpty ? .secondary : .primary)
                 }
+                .textSelection(.enabled)
+                .accessibilityLabel("Transcript")
             }
-            .textSelection(.enabled)
-            .accessibilityLabel("Transcript")
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
+            .padding(24)
+            .frame(maxWidth: 860, alignment: .leading)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.primary.opacity(0.11), lineWidth: 1)
+            }
+            .padding(.horizontal, 30)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
-        .frame(minHeight: 220, idealHeight: 320, maxHeight: 440)
+        .frame(minHeight: 320, maxHeight: .infinity)
+    }
+
+    private var documentHeader: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: outputFormat == .srt ? "captions.bubble" : "text.quote")
+                .font(.system(size: 18 * interfaceZoom, weight: .semibold))
+                .foregroundStyle(.tint)
+                .frame(width: 34 * interfaceZoom, height: 34 * interfaceZoom)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                if isRenamingTitle {
+                    TextField("Transcript title", text: $titleDraft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13 * interfaceZoom, weight: .semibold))
+                        .focused($isTitleFocused)
+                        .onSubmit(completeTitleRename)
+                        .onExitCommand(perform: cancelTitleRename)
+                        .frame(maxWidth: 420)
+                } else {
+                    Button(action: beginTitleRename) {
+                        Text(title.isEmpty ? "Transcript" : title)
+                            .font(.system(size: 13 * interfaceZoom, weight: .semibold))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Click to rename")
+                }
+                documentMetadata
+            }
+
+            Spacer()
+
+            if hasEdits {
+                Label("Edited", systemImage: "pencil")
+                    .font(.system(size: 11 * interfaceZoom, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(.quaternary.opacity(0.7), in: Capsule())
+            }
+        }
+    }
+
+    private var documentMetadata: some View {
+        HStack(spacing: 5 * interfaceZoom) {
+            Button(action: toggleCountMetric) {
+                ZStack(alignment: .leading) {
+                    if showsCharacterCount {
+                        Text(characterCountLabel)
+                            .transition(countTransition)
+                    } else {
+                        Text(wordCountLabel)
+                            .transition(countTransition)
+                    }
+                }
+                .animation(countAnimation, value: showsCharacterCount)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(showsCharacterCount ? "Show word count" : "Show character count")
+            .accessibilityLabel(showsCharacterCount ? "Character count" : "Word count")
+            .accessibilityValue(showsCharacterCount ? characterCountLabel : wordCountLabel)
+
+            if let durationText {
+                metadataSeparator
+                Text(durationText)
+            }
+
+            metadataSeparator
+            Text(languageName)
+
+            metadataSeparator
+            Text(outputFormat.rawValue)
+        }
+        .font(.system(size: 11 * interfaceZoom))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+
+    private var metadataSeparator: some View {
+        Text("·")
+            .accessibilityHidden(true)
+    }
+
+    private var countTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .scale(scale: 0.86, anchor: .center).combined(with: .opacity)
+    }
+
+    private var countAnimation: Animation? {
+        reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.24, dampingFraction: 0.78)
+    }
+
+    private func transcriptText(_ text: String) -> some View {
+        Text(highlightedTranscript(text))
+            .font(outputFormat == .srt
+                  ? .system(size: 12 * interfaceZoom, design: .monospaced)
+                  : .system(size: 15 * interfaceZoom))
+            .lineSpacing((outputFormat == .srt ? 2 : 5) * interfaceZoom)
+            .foregroundStyle(text.isEmpty ? .secondary : .primary)
+            .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+    }
+
+    private var copyButton: some View {
+        Button(action: copyTranscript) {
+            Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                .frame(width: 18 * interfaceZoom, height: 18 * interfaceZoom)
+        }
+        .modifier(AdaptiveGlassButtonStyle())
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
+        .popButtonPressEffect()
+        .tint(didCopy ? .green : .accentColor)
+        .accessibilityLabel(didCopy ? "Transcript copied" : "Copy transcript to clipboard")
+        .accessibilityHint("Copies the current transcript text to the clipboard.")
+        .help("Copy transcript to clipboard")
+    }
+
+    private var formattingButtons: some View {
+        HStack(spacing: 4) {
+            formatButton("bold", label: "Bold", action: .bold)
+            formatButton("italic", label: "Italic", action: .italic)
+            formatButton("underline", label: "Underline", action: .underline)
+        }
+    }
+
+    private func formatButton(_ symbol: String, label: String, action: RichTextAction) -> some View {
+        Button {
+            pendingRichTextAction = action
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 13 * interfaceZoom, weight: .semibold))
+                .frame(width: 26 * interfaceZoom, height: 26 * interfaceZoom)
+        }
+        .modifier(AdaptiveGlassButtonStyle())
+        .buttonBorderShape(.roundedRectangle(radius: 7))
+        .popButtonPressEffect()
+        .accessibilityLabel(label)
+        .help(label)
     }
 
     private func highlightedTranscript(_ text: String) -> AttributedString {
         TranscriptSearch.highlightedText(text, query: searchText)
     }
 
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    formatPicker
-                    Spacer(minLength: 12)
-                    actionButtons
+    @ViewBuilder
+    private var documentControls: some View {
+        if #available(macOS 26.0, *) {
+            documentControlsContent
+        } else {
+            documentControlsContent
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.07), radius: 12, y: 5)
+        }
+    }
+
+    private var documentControlsContent: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                formatSelector
+
+                Button {
+                    onSave(displayText, outputFormat)
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                        .font(.system(size: 13 * interfaceZoom))
+                }
+                .modifier(AdaptiveGlassButtonStyle())
+                .popButtonPressEffect()
+                .help("Export in the selected format")
+                .accessibilityHint("Exports the current transcript in the selected format.")
+
+                Spacer()
+
+                if outputFormat == .plain {
+                    Button(action: toggleEditing) {
+                        Image(systemName: isEditing ? "checkmark" : "pencil")
+                            .font(.system(size: 13 * interfaceZoom, weight: .medium))
+                            .frame(width: 18 * interfaceZoom, height: 18 * interfaceZoom)
+                    }
+                    .modifier(AdaptiveGlassButtonStyle())
+                    .buttonBorderShape(.circle)
+                    .controlSize(.large)
+                    .popButtonPressEffect()
+                    .help(isEditing ? "Done editing" : "Edit transcript")
+                    .accessibilityLabel(isEditing ? "Done editing transcript" : "Edit transcript")
                 }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    formatPicker
-                    actionButtons
+                Button(action: toggleSearch) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 13 * interfaceZoom, weight: .medium))
+                        .frame(width: 18 * interfaceZoom, height: 18 * interfaceZoom)
+                }
+                .modifier(AdaptiveGlassButtonStyle())
+                .buttonBorderShape(.circle)
+                .controlSize(.large)
+                .popButtonPressEffect()
+                .keyboardShortcut("f", modifiers: .command)
+                .help("Find in transcript (⌘F)")
+                .accessibilityLabel(showSearch ? "Hide transcript search" : "Find in transcript")
+
+                copyButton
+            }
+
+            if (outputFormat == .plain && isEditing) || showSearch {
+                Divider()
+
+                contextualToolsRow
+                    .transition(.opacity.combined(with: .offset(y: -5 * interfaceZoom)))
+            }
+        }
+        .padding(10 * interfaceZoom)
+        .animation(controlAnimation, value: isEditing)
+        .animation(controlAnimation, value: showSearch)
+    }
+
+    private var contextualToolsRow: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10 * interfaceZoom) {
+                if outputFormat == .plain && isEditing {
+                    editingTools
+                        .transition(.opacity)
+                }
+
+                Spacer(minLength: 12 * interfaceZoom)
+
+                if showSearch {
+                    searchBar
+                        .frame(minWidth: 140 * interfaceZoom, idealWidth: 250 * interfaceZoom, maxWidth: 320 * interfaceZoom)
+                        .layoutPriority(1)
+                        .transition(.opacity.combined(with: .offset(x: 8 * interfaceZoom)))
                 }
             }
 
-            if outputFormat != .plain {
-                phraseLengthControl
+            VStack(alignment: .leading, spacing: 8 * interfaceZoom) {
+                if outputFormat == .plain && isEditing {
+                    editingTools
+                }
+                if showSearch {
+                    searchBar
+                        .frame(maxWidth: .infinity)
+                }
             }
         }
     }
 
-    private var formatPicker: some View {
+    private var editingTools: some View {
         HStack(spacing: 8) {
-            Picker("Format", selection: $outputFormat) {
-                ForEach(OutputFormat.allCases, id: \.self) { format in
-                    Text(format.rawValue).tag(format)
-                }
+            formattingButtons
+
+            Divider()
+                .frame(height: 22)
+
+            Button(action: undo) {
+                Image(systemName: "arrow.uturn.backward")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 280)
-            .accessibilityLabel("Transcript format")
-            .onChange(of: outputFormat) { _, _ in
-                hasEdits = false
-                isEditing = false
-                editedText = formattedText
-                undoStack.removeAll()
+            .modifier(AdaptiveGlassButtonStyle())
+            .popButtonPressEffect()
+            .disabled(undoStack.isEmpty)
+            .help("Undo edit")
+            .accessibilityLabel("Undo transcript edit")
+
+            Button(action: resetEdits) {
+                Image(systemName: "arrow.counterclockwise")
             }
+            .modifier(AdaptiveGlassButtonStyle())
+            .popButtonPressEffect()
+            .disabled(!hasEdits)
+            .help("Reset to original")
+            .accessibilityLabel("Reset transcript to original")
         }
     }
 
-    private var actionButtons: some View {
-        HStack(spacing: 6) {
-            if outputFormat == .plain {
-                Button(action: {
-                    isEditing.toggle()
-                    if isEditing && !hasEdits { editedText = formattedText }
-                }) {
-                    Image(systemName: isEditing ? "pencil.slash" : "pencil")
-                        .font(.system(size: 18, weight: .semibold))
-                        .frame(width: 34, height: 32)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help(isEditing ? "Done editing" : "Edit transcript")
-                .accessibilityLabel(isEditing ? "Done editing transcript" : "Edit transcript")
-            }
+    private var controlAnimation: Animation? {
+        reduceMotion ? .easeOut(duration: 0.12) : .smooth(duration: 0.24)
+    }
 
-            if outputFormat == .plain && isEditing && hasEdits {
-                Button(action: undo) {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 18, weight: .semibold))
-                        .frame(width: 34, height: 32)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .disabled(undoStack.isEmpty)
-                .help("Undo edit")
-                .accessibilityLabel("Undo transcript edit")
-
-                Button(action: resetEdits) {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 18, weight: .semibold))
-                        .frame(width: 34, height: 32)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help("Reset to original")
-                .accessibilityLabel("Reset transcript to original")
+    @ViewBuilder
+    private var formatSelector: some View {
+        Picker("Format", selection: $outputFormat) {
+            ForEach(OutputFormat.allCases, id: \.self) { format in
+                Text(format.rawValue).tag(format)
             }
-
-            Button(action: toggleSearch) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 34, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut("f", modifiers: .command)
-            .help("Find in transcript (⌘F)")
-            .accessibilityLabel(showSearch ? "Hide transcript search" : "Find in transcript")
-
-            Button {
-                onCopy(displayText)
-                didCopy = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { didCopy = false }
-            } label: {
-                Label(didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
-            }
-            .buttonStyle(.bordered)
-            .accessibilityHint("Copies the current transcript text to the clipboard.")
-
-            Button {
-                onSave(displayText, outputFormat)
-            } label: {
-                Label("Export", systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(.bordered)
-            .accessibilityHint("Exports the current transcript in the selected format.")
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.large)
+        .font(.system(size: 13 * interfaceZoom))
+        .frame(width: 360 * interfaceZoom)
+        .accessibilityLabel("Transcript format")
+        .onChange(of: outputFormat) { _, newFormat in
+            resetForFormat(newFormat)
         }
     }
 
     private var phraseLengthControl: some View {
         HStack(spacing: 10) {
             Label("Phrase length", systemImage: "text.word.spacing")
-                .font(.caption)
+                .font(.system(size: 11 * interfaceZoom))
                 .foregroundStyle(.secondary)
                 .fixedSize()
 
@@ -267,10 +477,27 @@ struct TranscriptView: View {
                 .accessibilityValue(phraseLengthLabel)
 
             Text(phraseLengthLabel)
-                .font(.caption)
+                .font(.system(size: 11 * interfaceZoom))
                 .foregroundStyle(.secondary)
-                .frame(width: 58, alignment: .trailing)
+                .frame(width: 58 * interfaceZoom, alignment: .trailing)
         }
+        .frame(maxWidth: 620, alignment: .leading)
+    }
+
+    private var wordCount: Int {
+        displayText.split(whereSeparator: { $0.isWhitespace }).count
+    }
+
+    private var characterCount: Int {
+        displayText.count
+    }
+
+    private var wordCountLabel: String {
+        wordCount == 1 ? "1 word" : "\(wordCount) words"
+    }
+
+    private var characterCountLabel: String {
+        characterCount == 1 ? "1 character" : "\(characterCount) characters"
     }
 
     private var phraseLengthLabel: String {
@@ -282,7 +509,67 @@ struct TranscriptView: View {
     }
 
     private func toggleSearch() {
-        showSearch.toggle()
+        withAnimation(controlAnimation) {
+            showSearch.toggle()
+        }
+    }
+
+    private func toggleCountMetric() {
+        withAnimation(countAnimation) {
+            showsCharacterCount.toggle()
+        }
+    }
+
+    private func selectFormat(_ format: OutputFormat) {
+        guard outputFormat != format else { return }
+        withAnimation(.snappy(duration: 0.28)) {
+            outputFormat = format
+        }
+        resetForFormat(format)
+    }
+
+    private func resetForFormat(_ format: OutputFormat) {
+        hasEdits = false
+        isEditing = false
+        editedText = result.formatted(as: format, grouping: grouping)
+        undoStack.removeAll()
+    }
+
+    private func toggleEditing() {
+        withAnimation(controlAnimation) {
+            isEditing.toggle()
+            if isEditing && !hasEdits {
+                editedText = formattedText
+            }
+        }
+        if isEditing {
+            DispatchQueue.main.async {
+                isFocused = true
+            }
+        }
+    }
+
+    private func beginTitleRename() {
+        titleDraft = title
+        isRenamingTitle = true
+        DispatchQueue.main.async {
+            isTitleFocused = true
+        }
+    }
+
+    private func completeTitleRename() {
+        let trimmedTitle = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            cancelTitleRename()
+            return
+        }
+        onRename(trimmedTitle)
+        isRenamingTitle = false
+    }
+
+    private func cancelTitleRename() {
+        titleDraft = title
+        isRenamingTitle = false
     }
 
     private func undo() {
@@ -293,8 +580,28 @@ struct TranscriptView: View {
 
     private func resetEdits() {
         editedText = formattedText
+        pendingRichTextAction = .resetFormatting
         hasEdits = false
         isEditing = false
         undoStack.removeAll()
+    }
+
+    private func copyTranscript() {
+        onCopy(displayText)
+        didCopy = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            didCopy = false
+        }
+    }
+}
+
+private struct AdaptiveGlassButtonStyle: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.buttonStyle(.glass)
+        } else {
+            content.buttonStyle(.bordered)
+        }
     }
 }

@@ -37,6 +37,20 @@ final class ParakeetOutputDecoderTests: XCTestCase {
         XCTAssertEqual(decoded.result.text, "Final transcript")
     }
 
+    func testKeepsTranscriptWhenCLIUsesTokenObjectsForWords() throws {
+        let raw = """
+        {"text":"Hello world","frame_sec":0.08,"words":[{"id":101,"t":0.0,"conf":1.0}],"tokens":[]}
+        """
+
+        let decoded = try ParakeetOutputDecoder.decode(
+            ProcessOutput(terminationStatus: 0, data: Data(raw.utf8))
+        )
+
+        XCTAssertEqual(decoded.result.text, "Hello world")
+        XCTAssertTrue(decoded.result.words.isEmpty)
+        XCTAssertEqual(decoded.result.frameSec, 0.08)
+    }
+
     func testFallsBackToPlainOutputWhenJSONIsAbsent() throws {
         let decoded = try ParakeetOutputDecoder.decode(
             ProcessOutput(terminationStatus: 0, data: Data("plain transcript".utf8))

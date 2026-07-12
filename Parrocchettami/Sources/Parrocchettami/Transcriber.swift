@@ -160,7 +160,8 @@ class Transcriber: ObservableObject {
             "transcribe",
             "--model", model,
             "--input", inputForCLI.path,
-            "--json"
+            "--json",
+            "--timestamps"
         ]
         if !language.isEmpty {
             args.append(contentsOf: ["--lang", language])
@@ -251,17 +252,17 @@ class Transcriber: ObservableObject {
 enum ParakeetOutputDecoder {
     static func decode(_ output: ProcessOutput) throws -> (result: TranscriptionResult, debugLog: String) {
         let raw = output.text
-        let lines = filteredLines(from: raw)
-        let jsonCandidates = jsonObjects(in: raw)
-            + lines.filter { $0.hasPrefix("{") && $0.hasSuffix("}") }
-        let plainLines = lines.filter { !$0.hasPrefix("{") }.joined(separator: "\n")
+        let sanitized = sanitizeJSONOutput(raw)
+
+        let candidates = jsonObjects(in: sanitized)
 
         let detail = """
         Exit code: \(output.terminationStatus)
-        JSON candidates found: \(jsonCandidates.count)
-        Other lines: \(plainLines.isEmpty ? "none" : plainLines)
+        JSON candidates found: \(candidates.count)
         --- RAW FIRST 500 CHARS ---
         \(String(raw.prefix(500)))
+        --- RAW LAST 500 CHARS ---
+        \(String(raw.suffix(500)))
         """
 
         if output.terminationStatus != 0 {
@@ -269,10 +270,11 @@ enum ParakeetOutputDecoder {
         }
 
         var lastJSONError: Error?
-        for jsonObject in deduplicated(jsonCandidates) {
+        var lastCandidatePreview: String = ""
+        for jsonObject in deduplicated(candidates) {
             guard let jsonData = jsonObject.data(using: .utf8) else { continue }
             do {
-                let resp = try JSONDecoder().decode(TranscriptionResponse.self, from: jsonData)
+                let resp = try decodeTranscriptionResponse(from: jsonData)
                 return (
                     TranscriptionResult(
                         text: resp.text,
@@ -283,40 +285,178 @@ enum ParakeetOutputDecoder {
                 )
             } catch {
                 lastJSONError = error
+                lastCandidatePreview = String(jsonObject.prefix(200))
             }
         }
 
-        if let lastJSONError,
-           jsonCandidates.contains(where: { $0.contains("\"text\"") || $0.contains("\"words\"") }) {
-            throw TranscriberError.processFailed(
-                "JSON parse failed: \(lastJSONError.localizedDescription)\n\(detail)")
-        }
-
-        if !plainLines.isEmpty {
+        if let firstCandidate = candidates.first,
+           let text = extractTextField(from: firstCandidate) {
+            var words: [TimedWord] = []
+            if let wordsText = extractRawWordsArray(from: firstCandidate),
+               let data = wordsText.data(using: .utf8),
+               let parsed = try? JSONDecoder().decode([TimedWord].self, from: data) {
+                words = parsed
+            }
             return (
-                TranscriptionResult(text: plainLines, words: [], frameSec: 0.08),
+                TranscriptionResult(text: text, words: words, frameSec: 0.08),
                 detail
             )
-        } else {
-            throw TranscriberError.processFailed("No output from transcription.\n\(detail)")
         }
+
+        if let lastJSONError,
+           candidates.contains(where: { $0.contains("\"text\"") || $0.contains("\"words\"") }) {
+            throw TranscriberError.processFailed(
+                "JSON parse failed: \(lastJSONError.localizedDescription)\nCandidate preview: \(lastCandidatePreview)\n\(detail)")
+        }
+
+        let plainOutput = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+        if candidates.isEmpty, !plainOutput.isEmpty {
+            return (
+                TranscriptionResult(text: plainOutput, words: [], frameSec: 0.08),
+                detail
+            )
+        }
+
+        throw TranscriberError.processFailed("No output from transcription.\n\(detail)")
+    }
+
+    private static func sanitizeJSONOutput(_ raw: String) -> String {
+        raw.components(separatedBy: "\n")
+            .map { line in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("ggml_") || trimmed.hasPrefix("[parakeet]") || trimmed.hasPrefix("main:") {
+                    return ""
+                }
+                var cleaned = line
+                for phrase in ["ggml_metal_free: deallocating", "ggml_metal_free", "ggml_metal_init:"] {
+                    cleaned = cleaned.replacingOccurrences(of: phrase, with: "")
+                }
+                return cleaned
+            }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+    }
+
+    private static func extractTextField(from jsonText: String) -> String? {
+        guard let keyRange = jsonText.range(of: "\"text\"") else { return nil }
+        var idx = jsonText.index(after: keyRange.upperBound)
+        while idx < jsonText.endIndex, jsonText[idx].isWhitespace { idx = jsonText.index(after: idx) }
+        guard idx < jsonText.endIndex, jsonText[idx] == ":" else { return nil }
+        idx = jsonText.index(after: idx)
+        while idx < jsonText.endIndex, jsonText[idx].isWhitespace { idx = jsonText.index(after: idx) }
+        guard idx < jsonText.endIndex, jsonText[idx] == "\"" else { return nil }
+        idx = jsonText.index(after: idx)
+
+        var result = ""
+        var escaped = false
+        while idx < jsonText.endIndex {
+            let ch = jsonText[idx]
+            if escaped {
+                switch ch {
+                case "n": result.append("\n")
+                case "r": result.append("\r")
+                case "t": result.append("\t")
+                case "\\": result.append("\\")
+                case "\"": result.append("\"")
+                default: result.append(ch)
+                }
+                escaped = false
+            } else if ch == "\\" {
+                escaped = true
+            } else if ch == "\"" {
+                return result
+            } else {
+                result.append(ch)
+            }
+            idx = jsonText.index(after: idx)
+        }
+        return result.isEmpty ? nil : result
+    }
+
+    private static func extractRawWordsArray(from jsonText: String) -> String? {
+        guard let bracketStart = jsonText.range(of: "\"words\":[") ?? jsonText.range(of: "\"words\": [") else {
+            return nil
+        }
+        let contentStart = jsonText[bracketStart.upperBound...]
+        var depth = 1
+        var inString = false
+        var escaped = false
+        for (offset, ch) in contentStart.enumerated() {
+            if escaped { escaped = false; continue }
+            if ch == "\\" { escaped = inString; continue }
+            if ch == "\"" { inString.toggle(); continue }
+            guard !inString else { continue }
+            if ch == "[" { depth += 1 }
+            else if ch == "]" {
+                depth -= 1
+                if depth == 0 {
+                    let endIdx = contentStart.index(contentStart.startIndex, offsetBy: offset)
+                    return "[" + String(contentStart[..<endIdx]) + "]"
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func compactJSONFrom(lines: [String]) -> [String] {
+        guard let startIdx = lines.firstIndex(where: { $0.hasPrefix("{") }),
+              let endIdx = lines.lastIndex(where: { $0.hasSuffix("}") || $0.hasSuffix("]") }) else {
+            return []
+        }
+
+        let jsonLines = Array(lines[startIdx...endIdx])
+        let compacted = jsonLines.joined()
+        return [compacted]
     }
 
     private static func filteredLines(from raw: String) -> [String] {
         raw.components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { line in
-                if line.isEmpty { return false }
-                if line.hasPrefix("ggml_") { return false }
-                if line.hasPrefix("[parakeet]") { return false }
-                if line.hasPrefix("main:") { return false }
-                return true
+            .map { line in
+                var trimmed = line.trimmingCharacters(in: .whitespaces)
+                let prefixes = ["ggml_", "[parakeet]", "main:"]
+                for prefix in prefixes where trimmed.hasPrefix(prefix) {
+                    if let brace = trimmed.firstIndex(of: "{") {
+                        trimmed = String(trimmed[brace...])
+                    } else {
+                        trimmed = ""
+                    }
+                    break
+                }
+                return trimmed
             }
+            .filter { !$0.isEmpty }
     }
 
     private static func deduplicated(_ values: [String]) -> [String] {
         var seen = Set<String>()
         return values.filter { seen.insert($0).inserted }
+    }
+
+    /// parakeet-cli 0.4 can return decoder tokens (`id`, `t`, `conf`) in the
+    /// `words` field. Keep the transcript usable in that case, but omit timed
+    /// formatting until the CLI supplies rendered word records (`w`, `start`,
+    /// `end`, `conf`).
+    private static func decodeTranscriptionResponse(from data: Data) throws -> TranscriptionResponse {
+        let object = try JSONSerialization.jsonObject(with: data)
+        guard let response = object as? [String: Any],
+              let text = response["text"] as? String else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [],
+                debugDescription: "Expected a transcription object with a text field."
+            ))
+        }
+
+        let frameSec = (response["frame_sec"] as? NSNumber)?.doubleValue
+        let words: [TimedWord]
+        if let rawWords = response["words"],
+           JSONSerialization.isValidJSONObject(rawWords),
+           let wordsData = try? JSONSerialization.data(withJSONObject: rawWords) {
+            words = (try? JSONDecoder().decode([TimedWord].self, from: wordsData)) ?? []
+        } else {
+            words = []
+        }
+
+        return TranscriptionResponse(text: text, frame_sec: frameSec, words: words)
     }
 
     private static func jsonObjects(in raw: String) -> [String] {
@@ -430,7 +570,7 @@ struct TranscriptionResponse: Codable {
 }
 
 enum OutputFormat: String, CaseIterable {
-    case plain = "Plain Text"
+    case plain = "Rich Text"
     case timestamped = "Timestamped"
     case srt = "SRT"
 }

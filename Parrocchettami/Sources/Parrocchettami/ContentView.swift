@@ -3,16 +3,26 @@ import UniformTypeIdentifiers
 import AVFoundation
 
 struct ContentView: View {
+    private enum SidebarSelection: Hashable {
+        case newTranscription
+        case history(UUID)
+    }
+
+    private struct ErrorDetails: Identifiable {
+        let id = UUID()
+        let message: String
+    }
+
     @EnvironmentObject private var transcriber: Transcriber
     @EnvironmentObject private var appUpdater: AppUpdater
+    @EnvironmentObject private var interfaceZoom: InterfaceZoomController
     @StateObject private var recorder = AudioRecorder()
     @StateObject private var history = HistoryManager()
     @StateObject private var modelInstaller = ModelInstaller()
 
     @State private var selectedFile: URL?
     @State private var fileName = ""
-    @State private var alertMessage: String?
-    @State private var showAlert = false
+    @State private var errorDetails: ErrorDetails?
     @State private var elapsedTime: TimeInterval = 0
     @State private var timer: Timer?
     @State private var outputFormat: OutputFormat = .plain
@@ -26,10 +36,13 @@ struct ContentView: View {
     @State private var lastRecordingConversionError: String?
     @State private var showClearHistoryConfirmation = false
     @State private var showDeleteEntryConfirmation: HistoryEntry?
-    @State private var showAllHistory = false
+    @State private var renameEntry: HistoryEntry?
+    @State private var renameText = ""
+    @State private var currentHistoryEntryID: UUID?
     @State private var showDiscardRecordingConfirmation = false
     @State private var historySearchText = ""
-    @FocusState private var isLanguageFocused: Bool
+    @State private var sidebarSelection: SidebarSelection? = .newTranscription
+    @FocusState private var isSidebarRenameFocused: Bool
 
     private static let recordingNameFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -57,76 +70,74 @@ struct ContentView: View {
         supportedLanguages.first(where: { $0.code == selectedLanguage })?.name ?? "Auto-detect"
     }
 
-    var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            ScrollView {
-                VStack(spacing: 24) {
-                    header
-
-                    if transcriber.cliError != nil {
-                        if transcriber.cliError?.localizedCaseInsensitiveContains("model") == true {
-                            ModelSetupView(installer: modelInstaller)
-                        } else if let error = transcriber.cliError {
-                            SetupRequiredView(message: error, onRetry: { Task { await transcriber.locateCLI() } })
-                        }
-                    }
-
-                    if transcriber.transcriptionResult == nil && !transcriber.isTranscribing {
-                        inputSection
-                    }
-
-                    if transcriber.isTranscribing {
-                        TranscriptionProgressView(
-                            fileName: fileName,
-                            audioDuration: audioDuration,
-                            phase: transcriber.transcriptionPhase,
-                            onCancel: { transcriber.cancel() }
-                        )
-                    }
-
-                    if let result = transcriber.transcriptionResult {
-                        TranscriptView(
-                            result: result,
-                            outputFormat: $outputFormat,
-                            grouping: $grouping,
-                            onCopy: copyToClipboard,
-                            onSave: exportResult
-                        )
-                    }
-
-                    if !history.entries.isEmpty {
-                        historySection
-                    }
-
-                    diagnostics
-                }
-                .frame(maxWidth: 920)
-                .padding(.horizontal, 32)
-                .padding(.vertical, 28)
-                .frame(maxWidth: .infinity)
-            }
-
-            creditsButton
-                .padding(14)
+    private var interfaceDynamicTypeSize: DynamicTypeSize {
+        switch interfaceZoom.scale {
+        case ..<0.85: return .small
+        case ..<0.95: return .medium
+        case ..<1.05: return .large
+        case ..<1.15: return .xLarge
+        case ..<1.25: return .xxLarge
+        case ..<1.35: return .xxxLarge
+        default: return .accessibility1
         }
-        .background(Color(nsColor: .windowBackgroundColor))
-        .background(InitialFocusClearingView().frame(width: 0, height: 0))
-        .alert("Something went wrong", isPresented: $showAlert) {
-            if let retryURL = retryFileURL {
-                Button("Retry") {
-                    selectedFile = retryURL
-                    fileName = retryFileDisplayName ?? retryURL.lastPathComponent
-                    retryFileURL = nil
-                    let retryDisplayName = retryFileDisplayName
-                    retryFileDisplayName = nil
-                    startTranscription(retryURL, displayName: retryDisplayName)
+    }
+
+    private var interfaceControlSize: ControlSize {
+        switch interfaceZoom.scale {
+        case ..<0.95: return .small
+        case 1.05...: return .large
+        default: return .regular
+        }
+    }
+
+    var body: some View {
+        content
+            .environment(\.interfaceZoom, interfaceZoom.scale)
+            .font(.system(size: 13 * interfaceZoom.scale))
+            .dynamicTypeSize(interfaceDynamicTypeSize)
+            .controlSize(interfaceControlSize)
+    }
+
+    private var content: some View {
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            detail
+        }
+        .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            if sidebarSelection == .newTranscription || isBusy || transcriber.cliError != nil {
+                ToolbarItem(placement: .status) {
+                    StatusBadge(
+                        isReady: transcriber.cliReady,
+                        isWorking: isBusy,
+                        hasError: transcriber.cliError != nil
+                    )
                 }
             }
-            Button("OK") {
-                retryFileURL = nil
-            }
-        } message: {
-            Text(alertMessage ?? "")
+
+        }
+        .modifier(FocusedSceneValuesModifier(
+            openFileAction: openFilePicker,
+            toggleRecordingAction: toggleRecording,
+            stopRecordingAction: stopRecording,
+            clearFileAction: clearFile,
+            toggleDiagnosticsAction: { showDiagnostics.toggle() },
+            isRecording: recorder.isRecording,
+            isPaused: recorder.isPaused,
+            isTranscribing: transcriber.isTranscribing,
+            isReady: transcriber.cliReady,
+            hasResult: transcriber.transcriptionResult != nil,
+            hasFile: selectedFile != nil
+        ))
+        .background(WindowFocusResetter())
+        .sheet(item: $errorDetails) { details in
+            ErrorDetailsSheet(
+                message: details.message,
+                canRetry: retryFileURL != nil,
+                retry: retryTranscription,
+                dismiss: dismissErrorDetails
+            )
         }
         .confirmationDialog(
             "Clear transcription history?",
@@ -135,7 +146,6 @@ struct ContentView: View {
         ) {
                 Button("Clear History", role: .destructive) {
                     history.clearAll()
-                    showAllHistory = false
                     historySearchText = ""
                 }
             Button("Cancel", role: .cancel) {}
@@ -176,6 +186,17 @@ struct ContentView: View {
         .onChange(of: modelInstaller.isInstalled) { _, installed in
             if installed { Task { await transcriber.locateCLI() } }
         }
+        .onChange(of: sidebarSelection) { _, selection in
+            switch selection {
+            case let .history(id):
+                guard let entry = history.entries.first(where: { $0.id == id }) else { return }
+                openHistoryEntry(entry)
+            case .newTranscription, .none:
+                if transcriber.transcriptionResult != nil || selectedFile != nil {
+                    clearFile()
+                }
+            }
+        }
     }
 
     private var creditsButton: some View {
@@ -183,7 +204,7 @@ struct ContentView: View {
             showCredits.toggle()
         } label: {
             Image(systemName: "info.circle")
-                .font(.system(size: 16))
+                .font(.system(size: 16 * interfaceZoom.scale))
                 .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
@@ -198,42 +219,256 @@ struct ContentView: View {
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: 20) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(transcriber.transcriptionResult == nil ? "Turn audio into text" : "Your transcript")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+    @ViewBuilder
+    private var newTranscriptionButton: some View {
+        if #available(macOS 26.0, *) {
+            Button(action: startNewTranscription) {
+                newTranscriptionLabel
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.roundedRectangle(radius: 11))
+            .keyboardShortcut("n", modifiers: .command)
+            .popButtonPressEffect()
+        } else {
+            Button(action: startNewTranscription) {
+                newTranscriptionLabel
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.roundedRectangle(radius: 11))
+            .keyboardShortcut("n", modifiers: .command)
+            .popButtonPressEffect()
+        }
+    }
 
-                Text(transcriber.transcriptionResult == nil
-                     ? "Private, fast transcription that stays entirely on your Mac."
-                     : "Review, reformat, copy, or export the finished transcription.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+    private var newTranscriptionLabel: some View {
+        HStack(spacing: 9 * interfaceZoom.scale) {
+            Image(systemName: "plus")
+                .fontWeight(.semibold)
+                .foregroundStyle(.tint)
+            Text("New Transcription")
+                .font(.system(size: 13 * interfaceZoom.scale, weight: .medium))
+                .foregroundStyle(.primary)
+            Spacer()
+        }
+        .padding(.horizontal, 4 * interfaceZoom.scale)
+        .frame(maxWidth: .infinity, minHeight: 30 * interfaceZoom.scale, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private var sidebar: some View {
+        List(selection: $sidebarSelection) {
+            Section {
+                sidebarSearchField
             }
 
-            Spacer(minLength: 24)
+            Section {
+                newTranscriptionButton
+                .listRowInsets(EdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10))
+                .accessibilityHint("Clears the current result and opens a fresh transcription.")
+            }
 
-            StatusBadge(
-                isReady: transcriber.cliReady,
-                isWorking: isBusy,
-                hasError: transcriber.cliError != nil
-            )
-
-            if transcriber.transcriptionResult != nil && !isBusy {
-                Button("New Transcription", action: clearFile)
-                    .buttonStyle(.bordered)
-                    .keyboardShortcut("n", modifiers: .command)
-                    .accessibilityHint("Clears the current result and returns to the input screen.")
+            Section {
+                ForEach(filteredHistoryEntries) { entry in
+                    Group {
+                        if renameEntry?.id == entry.id {
+                            TextField("Transcript name", text: $renameText)
+                                .textFieldStyle(.roundedBorder)
+                                .focused($isSidebarRenameFocused)
+                                .onSubmit { commitSidebarRename(entry) }
+                                .onExitCommand { cancelSidebarRename() }
+                        } else {
+                            SidebarHistoryRow(entry: entry)
+                        }
+                    }
+                        .listRowInsets(EdgeInsets(
+                            top: 4 * interfaceZoom.scale,
+                            leading: 10 * interfaceZoom.scale,
+                            bottom: 4 * interfaceZoom.scale,
+                            trailing: 10 * interfaceZoom.scale
+                        ))
+                        .tag(SidebarSelection.history(entry.id))
+                        .contextMenu {
+                            Button("Rename…") {
+                                beginSidebarRename(entry)
+                            }
+                            Button("Export") {
+                                exportResult(entry.result.formatted(as: .plain), format: .plain)
+                            }
+                            Button("Archive") {
+                                history.archive(entry)
+                                if sidebarSelection == .history(entry.id) {
+                                    startNewTranscription()
+                                }
+                            }
+                            Divider()
+                            Button("Delete", role: .destructive) {
+                                showDeleteEntryConfirmation = entry
+                            }
+                        }
+                }
+            } header: {
+                Text("Recent Transcriptions")
+                    .font(.system(size: 11 * interfaceZoom.scale, weight: .semibold))
+                    .padding(.leading, 8 * interfaceZoom.scale)
+            }
+        }
+        .listStyle(.sidebar)
+        .navigationSplitViewColumnWidth(
+            min: 210 * interfaceZoom.scale,
+            ideal: 230 * interfaceZoom.scale,
+            max: 300 * interfaceZoom.scale
+        )
+        .navigationTitle("Parrocchettami")
+        .safeAreaInset(edge: .bottom) {
+            HStack {
+                Spacer()
+                creditsButton
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Menu {
+                    Button("Clear History", role: .destructive) {
+                        showClearHistoryConfirmation = true
+                    }
+                    .disabled(filteredHistoryEntries.isEmpty)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("History options")
             }
         }
     }
 
+    private var sidebarSearchField: some View {
+        HStack(spacing: 7 * interfaceZoom.scale) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12 * interfaceZoom.scale, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            TextField("Search transcripts", text: $historySearchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13 * interfaceZoom.scale))
+
+            if !historySearchText.isEmpty {
+                Button {
+                    historySearchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12 * interfaceZoom.scale))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear transcript search")
+            }
+        }
+        .padding(.horizontal, 9 * interfaceZoom.scale)
+        .padding(.vertical, 6 * interfaceZoom.scale)
+        .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 8 * interfaceZoom.scale, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch sidebarSelection {
+        case .history:
+            if let result = transcriber.transcriptionResult {
+                transcriptDetail(result)
+            } else {
+                ContentUnavailableView(
+                    "Choose a transcript",
+                    systemImage: "doc.text",
+                    description: Text("Select a transcript from the sidebar to review it.")
+                )
+            }
+        case .newTranscription, .none:
+            if transcriber.isTranscribing {
+                progressDetail
+            } else if let result = transcriber.transcriptionResult {
+                transcriptDetail(result)
+            } else {
+                newTranscriptionDetail
+            }
+        }
+    }
+
+    private var newTranscriptionDetail: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("New transcription")
+                        .font(.system(size: 30 * interfaceZoom.scale, weight: .bold, design: .rounded))
+
+                    Label("All processing stays on this Mac", systemImage: "lock")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let error = transcriber.cliError {
+                    if error.localizedCaseInsensitiveContains("model") {
+                        ModelSetupView(installer: modelInstaller)
+                    } else {
+                        SetupRequiredView(message: error, onRetry: { Task { await transcriber.locateCLI() } })
+                    }
+                } else if !transcriber.cliReady {
+                    PreparationStateView()
+                } else {
+                    inputSection
+                }
+
+                diagnostics
+            }
+            .frame(maxWidth: 900, alignment: .leading)
+            .padding(.horizontal, 36)
+            .padding(.vertical, 32)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    private var progressDetail: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Text("Transcribing")
+                .font(.system(size: 30 * interfaceZoom.scale, weight: .bold, design: .rounded))
+            TranscriptionProgressView(
+                fileName: fileName,
+                audioDuration: audioDuration,
+                phase: transcriber.transcriptionPhase,
+                onCancel: { transcriber.cancel() }
+            )
+        }
+        .frame(maxWidth: 720, alignment: .leading)
+        .padding(36)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private func transcriptDetail(_ result: TranscriptionResult) -> some View {
+        let entryID = currentHistoryEntryID
+        let title = entryID
+            .flatMap { id in history.entries.first(where: { $0.id == id })?.fileName }
+            ?? fileName
+
+        return TranscriptView(
+            result: result,
+            title: title,
+            durationText: audioDuration.map(formattedDuration),
+            languageName: selectedLanguageName,
+            outputFormat: $outputFormat,
+            grouping: $grouping,
+            onCopy: copyToClipboard,
+            onSave: exportResult,
+            onRename: { newName in
+                renameTranscript(id: entryID, to: newName)
+            }
+        )
+        .id(entryID)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .textBackgroundColor))
+    }
+
     private var inputSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("New transcription")
-                .font(.headline)
-                .padding(.horizontal, 4)
-
             HStack(spacing: 10) {
                 Label("Language", systemImage: "globe")
                     .font(.callout.weight(.medium))
@@ -266,128 +501,29 @@ struct ContentView: View {
                     .padding(.vertical, 7)
                     .frame(minWidth: 150, alignment: .leading)
                     .background(.quaternary.opacity(0.8), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(isLanguageFocused ? Color.accentColor.opacity(0.9) : .clear, lineWidth: 2)
-                    )
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .menuStyle(.borderlessButton)
                 .buttonStyle(.plain)
-                .focused($isLanguageFocused)
-                .focusEffectDisabled()
                 .fixedSize(horizontal: true, vertical: false)
                 .accessibilityLabel("Transcription language")
                 .accessibilityValue(selectedLanguageName)
 
                 Spacer()
             }
-            .padding(.horizontal, 4)
-
             InputWorkspace(
                 recorder: recorder,
                 isReady: transcriber.cliReady,
                 isTranscribing: transcriber.isTranscribing,
                 elapsedTime: elapsedTime,
-                selectedFileName: fileName,
                 onChooseFile: openFilePicker,
                 onToggleRecording: toggleRecording,
                 onStopRecording: stopRecording,
                 onDiscardRecording: { showDiscardRecordingConfirmation = true },
-                onDropFile: { setFile($0) },
-                onClearFile: clearFile
+                onDropFile: { setFile($0) }
             )
         }
         .accessibilityElement(children: .contain)
-    }
-
-    private var historySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Recent Transcriptions")
-                    .font(.headline)
-                Spacer()
-                if filteredHistoryEntries.count > 5 {
-                    Button(showAllHistory ? "Show Recent" : "Show All") {
-                        showAllHistory.toggle()
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(showAllHistory ? "Show recent transcription history" : "Show all transcription history")
-                }
-                Button("Clear All") {
-                    showClearHistoryConfirmation = true
-                }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Clear all transcription history")
-                    .accessibilityHint("Asks for confirmation before deleting saved history.")
-            }
-            .padding(.horizontal, 4)
-            .accessibilityElement(children: .contain)
-
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-
-                TextField("Search history", text: $historySearchText)
-                    .textFieldStyle(.plain)
-
-                if !historySearchText.isEmpty {
-                    Button {
-                        historySearchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear history search")
-                }
-            }
-            .font(.caption)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.14)))
-            .accessibilityLabel("Search transcription history")
-
-            VStack(spacing: 12) {
-                ForEach(visibleHistoryEntries) { entry in
-                    HistoryRow(
-                        entry: entry,
-                        onReopen: {
-                            transcriber.transcriptionResult = entry.result
-                            fileName = entry.fileName
-                            selectedFile = nil
-                            audioDuration = entry.audioDuration
-                            outputFormat = .plain
-                            grouping = 0.5
-                        },
-                        onExport: {
-                            let display = entry.result.formatted(as: .plain)
-                            exportResult(display, format: .plain)
-                        },
-                        onArchive: { history.archive(entry) },
-                        onDelete: { showDeleteEntryConfirmation = entry }
-                    )
-                }
-            }
-            .padding(.top, 10)
-
-            if visibleHistoryEntries.isEmpty {
-                Text("No matching transcriptions")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 8)
-            }
-        }
-    }
-
-    private var visibleHistoryEntries: ArraySlice<HistoryEntry> {
-        filteredHistoryEntries.prefix(showAllHistory ? 20 : 5)
     }
 
     private var filteredHistoryEntries: [HistoryEntry] {
@@ -559,13 +695,71 @@ struct ContentView: View {
         retryFileURL = nil
         retryFileDisplayName = nil
         lastRecordingConversionError = nil
-        showAllHistory = false
         transcriber.transcriptionResult = nil
+        currentHistoryEntryID = nil
         if transcriber.isTranscribing {
             transcriber.cancel()
         }
         outputFormat = .plain
         grouping = 0.5
+    }
+
+    private func startNewTranscription() {
+        clearFile()
+        sidebarSelection = .newTranscription
+    }
+
+    private func beginSidebarRename(_ entry: HistoryEntry) {
+        renameText = entry.fileName
+        renameEntry = entry
+        DispatchQueue.main.async {
+            isSidebarRenameFocused = true
+        }
+    }
+
+    private func commitSidebarRename(_ entry: HistoryEntry) {
+        let trimmedName = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            cancelSidebarRename()
+            return
+        }
+        history.rename(entry, to: trimmedName)
+        if currentHistoryEntryID == entry.id {
+            fileName = trimmedName
+        }
+        renameEntry = nil
+    }
+
+    private func cancelSidebarRename() {
+        renameEntry = nil
+        renameText = ""
+    }
+
+    private func renameTranscript(id: UUID?, to newName: String) {
+        let trimmedName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        guard let id,
+              let entry = history.entries.first(where: { $0.id == id }) else { return }
+        history.rename(entry, to: trimmedName)
+        if currentHistoryEntryID == id {
+            fileName = trimmedName
+        }
+    }
+
+    private func openHistoryEntry(_ entry: HistoryEntry) {
+        transcriber.transcriptionResult = entry.result
+        fileName = entry.fileName
+        selectedFile = nil
+        audioDuration = entry.audioDuration
+        outputFormat = .plain
+        grouping = 0.5
+        currentHistoryEntryID = entry.id
+    }
+
+    private func formattedDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return minutes > 0 ? "\(minutes)m \(seconds)s" : "\(seconds)s"
     }
 
     private func startTranscription(_ url: URL, displayName: String? = nil) {
@@ -577,7 +771,8 @@ struct ContentView: View {
                 let result = try await transcriber.transcribe(fileURL: url, language: selectedLanguage)
                 await MainActor.run {
                     transcriber.transcriptionResult = result
-                    history.add(from: result, fileName: fileName, audioDuration: audioDuration)
+                    let entry = history.add(from: result, fileName: fileName, audioDuration: audioDuration)
+                    currentHistoryEntryID = entry.id
                     if displayName != nil {
                         cleanupTemporaryRecording(at: url)
                     }
@@ -618,8 +813,23 @@ struct ContentView: View {
     }
 
     private func showError(_ message: String) {
-        alertMessage = message
-        showAlert = true
+        errorDetails = ErrorDetails(message: message)
+    }
+
+    private func retryTranscription() {
+        guard let retryURL = retryFileURL else { return }
+        selectedFile = retryURL
+        fileName = retryFileDisplayName ?? retryURL.lastPathComponent
+        let retryDisplayName = retryFileDisplayName
+        retryFileURL = nil
+        retryFileDisplayName = nil
+        errorDetails = nil
+        startTranscription(retryURL, displayName: retryDisplayName)
+    }
+
+    private func dismissErrorDetails() {
+        retryFileURL = nil
+        errorDetails = nil
     }
 
     private func copyToClipboard(_ text: String) {
@@ -642,37 +852,6 @@ struct ContentView: View {
             try text.write(to: url, atomically: true, encoding: .utf8)
         } catch {
             showError("The transcription could not be exported: \(error.localizedDescription)")
-        }
-    }
-}
-
-private struct InitialFocusClearingView: NSViewRepresentable {
-    func makeNSView(context: Context) -> InitialFocusClearingNSView {
-        InitialFocusClearingNSView()
-    }
-
-    func updateNSView(_ nsView: InitialFocusClearingNSView, context: Context) {
-        nsView.clearInitialFocusIfNeeded()
-    }
-}
-
-private final class InitialFocusClearingNSView: NSView {
-    private var didClearInitialFocus = false
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        clearInitialFocusIfNeeded()
-    }
-
-    func clearInitialFocusIfNeeded() {
-        guard !didClearInitialFocus else { return }
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self,
-                  !self.didClearInitialFocus,
-                  let window = self.window else { return }
-            window.makeFirstResponder(nil)
-            self.didClearInitialFocus = true
         }
     }
 }
@@ -754,80 +933,92 @@ private struct CreditsView: View {
     }
 }
 
-private struct HistoryRow: View {
+private struct SidebarHistoryRow: View {
+    @Environment(\.interfaceZoom) private var interfaceZoom
     let entry: HistoryEntry
-    let onReopen: () -> Void
-    let onExport: () -> Void
-    let onArchive: () -> Void
-    let onDelete: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 10 * interfaceZoom) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 13 * interfaceZoom))
+                .frame(width: 16 * interfaceZoom)
+
+            VStack(alignment: .leading, spacing: 2 * interfaceZoom) {
                 Text(entry.fileName)
-                    .font(.callout)
+                    .font(.system(size: 13 * interfaceZoom))
                     .lineLimit(1)
-                HStack(spacing: 6) {
-                    Text(entry.formattedDate)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("·")
-                        .foregroundStyle(.tertiary)
-                    Text(entry.text.prefix(60).replacingOccurrences(of: "\n", with: " "))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer()
-
-            HStack(spacing: 6) {
-                Button(action: onReopen) {
-                    Label("Open", systemImage: "doc.text")
-                        .font(.callout.weight(.medium))
-                        .labelStyle(.titleAndIcon)
-                        .padding(.horizontal, 8)
-                        .frame(height: 32)
-                }
-                .buttonStyle(.bordered)
-                .help("Open transcript")
-                .accessibilityLabel("Open \(entry.fileName)")
-
-                Button(action: onExport) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help("Export")
-                .accessibilityLabel("Export \(entry.fileName)")
-
-                Button(action: onArchive) {
-                    Image(systemName: "archivebox")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help("Archive")
-                .accessibilityLabel("Archive \(entry.fileName)")
-
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help("Delete")
-                .accessibilityLabel("Delete \(entry.fileName)")
+                Text(entry.formattedDate)
+                    .font(.system(size: 11 * interfaceZoom))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
         .accessibilityElement(children: .contain)
+    }
+}
+
+private struct PreparationStateView: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.small)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Preparing offline transcription")
+                    .font(.headline)
+                Text("Checking the local transcription engine on this Mac.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct ErrorDetailsSheet: View {
+    let message: String
+    let canRetry: Bool
+    let retry: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Something went wrong")
+                    .font(.title3.weight(.semibold))
+                Text("The transcription could not be completed. The technical details below can be copied for support.")
+                    .foregroundStyle(.secondary)
+            }
+
+            ScrollView {
+                Text(message)
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(.quaternary)
+            }
+
+            HStack {
+                Button("Copy Details") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(message, forType: .string)
+                }
+                Spacer()
+                Button("Close", action: dismiss)
+                    .keyboardShortcut(.cancelAction)
+                if canRetry {
+                    Button("Retry", action: retry)
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 520, idealWidth: 640, maxWidth: 760, minHeight: 320, idealHeight: 460, maxHeight: 620)
     }
 }

@@ -16,7 +16,11 @@ final class AudioConverterTests: XCTestCase {
 
         let sourceURL = tempDir.appendingPathComponent("voice.opus")
         let destinationURL = tempDir.appendingPathComponent("transcribe_input.wav")
-        FileManager.default.createFile(atPath: sourceURL.path, contents: Data("opus".utf8))
+        // Create a minimal fake OGG Opus file header: "OggS" magic + padding
+        var fakeData = Data()
+        fakeData.append(contentsOf: [0x4f, 0x67, 0x67, 0x53]) // OggS
+        fakeData.append(contentsOf: Array(repeating: 0, count: 60))
+        FileManager.default.createFile(atPath: sourceURL.path, contents: fakeData)
 
         let runner = MockAudioProcessRunner()
 
@@ -29,8 +33,8 @@ final class AudioConverterTests: XCTestCase {
 
         XCTAssertEqual(runner.calls.count, 2)
         XCTAssertEqual(runner.calls[0].executableURL.path, opusdecURL.path)
-        XCTAssertEqual(runner.calls[0].arguments.prefix(3), ["--quiet", "--rate", "16000"])
-        XCTAssertEqual(runner.calls[0].arguments[3], sourceURL.path)
+        XCTAssertEqual(runner.calls[0].arguments.prefix(2), ["--rate", "16000"])
+        XCTAssertEqual(runner.calls[0].arguments[2], sourceURL.path)
         XCTAssertEqual(runner.calls[1].executableURL.path, "/usr/bin/afconvert")
         XCTAssertEqual(runner.calls[1].arguments.prefix(6), ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1"])
         XCTAssertTrue(FileManager.default.fileExists(atPath: destinationURL.path))
@@ -44,7 +48,10 @@ final class AudioConverterTests: XCTestCase {
 
         let sourceURL = tempDir.appendingPathComponent("voice.opus")
         let destinationURL = tempDir.appendingPathComponent("transcribe_input.wav")
-        FileManager.default.createFile(atPath: sourceURL.path, contents: Data("opus".utf8))
+        var fakeData = Data()
+        fakeData.append(contentsOf: [0x4f, 0x67, 0x67, 0x53])
+        fakeData.append(contentsOf: Array(repeating: 0, count: 60))
+        FileManager.default.createFile(atPath: sourceURL.path, contents: fakeData)
 
         do {
             try await convertAudioTo16kHzMonoWAV(
