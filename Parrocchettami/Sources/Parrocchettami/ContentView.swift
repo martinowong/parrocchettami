@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import AVFoundation
@@ -19,13 +20,15 @@ struct ContentView: View {
     @StateObject private var recorder = AudioRecorder()
     @StateObject private var history = HistoryManager()
     @StateObject private var modelInstaller = ModelInstaller()
+    @AppStorage("historyRetentionLimit") private var historyRetentionLimit = 100
+    @AppStorage("hasCompletedTutorialV1") private var hasCompletedTutorial = false
 
     @State private var selectedFile: URL?
     @State private var fileName = ""
     @State private var errorDetails: ErrorDetails?
     @State private var elapsedTime: TimeInterval = 0
     @State private var timer: Timer?
-    @State private var outputFormat: OutputFormat = .plain
+    @State private var outputFormat: OutputFormat = .markdown
     @State private var grouping: Double = 0.5
     @State private var showDiagnostics = false
     @State private var audioDuration: TimeInterval?
@@ -33,6 +36,7 @@ struct ContentView: View {
     @State private var showCredits = false
     @State private var retryFileURL: URL?
     @State private var retryFileDisplayName: String?
+    @State private var isStartingTranscription = false
     @State private var lastRecordingConversionError: String?
     @State private var showClearHistoryConfirmation = false
     @State private var showDeleteEntryConfirmation: HistoryEntry?
@@ -42,6 +46,12 @@ struct ContentView: View {
     @State private var showDiscardRecordingConfirmation = false
     @State private var historySearchText = ""
     @State private var sidebarSelection: SidebarSelection? = .newTranscription
+    @State private var showArchived = false
+    @State private var currentTranscriptLanguageName = "Auto-detect"
+    @State private var showTutorial = !UserDefaults.standard.bool(forKey: "hasCompletedTutorialV1")
+    @State private var tutorialStep: TutorialStep = .splash
+    @State private var tutorialOutputFormat: OutputFormat = .markdown
+    @State private var tutorialGrouping: Double = 0.5
     @FocusState private var isSidebarRenameFocused: Bool
 
     private static let recordingNameFormatter: DateFormatter = {
@@ -96,6 +106,22 @@ struct ContentView: View {
             .font(.system(size: 13 * interfaceZoom.scale))
             .dynamicTypeSize(interfaceDynamicTypeSize)
             .controlSize(interfaceControlSize)
+            .overlayPreferenceValue(TutorialTargetPreferenceKey.self) { anchors in
+                GeometryReader { proxy in
+                    if showTutorial {
+                        TutorialView(
+                            step: $tutorialStep,
+                            targetFrame: tutorialStep.target.flatMap { target in
+                                anchors[target].map { proxy[$0] }
+                            },
+                            canvasSize: proxy.size,
+                            onFinish: completeTutorial,
+                            onSkip: completeTutorial
+                        )
+                        .zIndex(100)
+                    }
+                }
+            }
     }
 
     private var content: some View {
@@ -123,6 +149,7 @@ struct ContentView: View {
             stopRecordingAction: stopRecording,
             clearFileAction: clearFile,
             toggleDiagnosticsAction: { showDiagnostics.toggle() },
+            showTutorialAction: startTutorial,
             isRecording: recorder.isRecording,
             isPaused: recorder.isPaused,
             isTranscribing: transcriber.isTranscribing,
@@ -197,6 +224,25 @@ struct ContentView: View {
                 }
             }
         }
+        .onChange(of: historyRetentionLimit) { _, newLimit in
+            history.updateRetentionLimit(newLimit)
+        }
+    }
+
+    private func startTutorial() {
+        tutorialStep = .splash
+        tutorialOutputFormat = .markdown
+        tutorialGrouping = 0.5
+        withAnimation(.easeOut(duration: 0.22)) {
+            showTutorial = true
+        }
+    }
+
+    private func completeTutorial() {
+        hasCompletedTutorial = true
+        withAnimation(.easeOut(duration: 0.2)) {
+            showTutorial = false
+        }
     }
 
     private var creditsButton: some View {
@@ -214,7 +260,11 @@ struct ContentView: View {
             CreditsView(
                 parakeetVersion: transcriber.parakeetVersion,
                 canCheckForUpdates: appUpdater.canCheckForUpdates,
-                onCheckForUpdates: appUpdater.checkForUpdates
+                onCheckForUpdates: appUpdater.checkForUpdates,
+                onShowTutorial: {
+                    showCredits = false
+                    startTutorial()
+                }
             )
         }
     }
@@ -269,47 +319,38 @@ struct ContentView: View {
 
             Section {
                 ForEach(filteredHistoryEntries) { entry in
-                    Group {
-                        if renameEntry?.id == entry.id {
-                            TextField("Transcript name", text: $renameText)
-                                .textFieldStyle(.roundedBorder)
-                                .focused($isSidebarRenameFocused)
-                                .onSubmit { commitSidebarRename(entry) }
-                                .onExitCommand { cancelSidebarRename() }
-                        } else {
-                            SidebarHistoryRow(entry: entry)
-                        }
-                    }
-                        .listRowInsets(EdgeInsets(
-                            top: 4 * interfaceZoom.scale,
-                            leading: 10 * interfaceZoom.scale,
-                            bottom: 4 * interfaceZoom.scale,
-                            trailing: 10 * interfaceZoom.scale
-                        ))
-                        .tag(SidebarSelection.history(entry.id))
-                        .contextMenu {
-                            Button("Rename…") {
-                                beginSidebarRename(entry)
-                            }
-                            Button("Export") {
-                                exportResult(entry.result.formatted(as: .plain), format: .plain)
-                            }
-                            Button("Archive") {
-                                history.archive(entry)
-                                if sidebarSelection == .history(entry.id) {
-                                    startNewTranscription()
-                                }
-                            }
-                            Divider()
-                            Button("Delete", role: .destructive) {
-                                showDeleteEntryConfirmation = entry
-                            }
-                        }
+                    sidebarHistoryRow(entry, isArchived: false)
                 }
             } header: {
                 Text("Recent Transcriptions")
                     .font(.system(size: 11 * interfaceZoom.scale, weight: .semibold))
                     .padding(.leading, 8 * interfaceZoom.scale)
+            }
+
+            if !filteredArchivedEntries.isEmpty {
+                Section {
+                    if showArchived || !historySearchText.isEmpty {
+                        ForEach(filteredArchivedEntries) { entry in
+                            sidebarHistoryRow(entry, isArchived: true)
+                        }
+                    }
+                } header: {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            showArchived.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: showArchived ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 9, weight: .semibold))
+                            Text("Archived (\(filteredArchivedEntries.count))")
+                                .font(.system(size: 11 * interfaceZoom.scale, weight: .semibold))
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .listStyle(.sidebar)
@@ -338,6 +379,52 @@ struct ContentView: View {
                     Image(systemName: "ellipsis.circle")
                 }
                 .accessibilityLabel("History options")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sidebarHistoryRow(_ entry: HistoryEntry, isArchived: Bool) -> some View {
+        Group {
+            if renameEntry?.id == entry.id {
+                TextField("Transcript name", text: $renameText)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($isSidebarRenameFocused)
+                    .onSubmit { commitSidebarRename(entry) }
+                    .onExitCommand { cancelSidebarRename() }
+            } else {
+                SidebarHistoryRow(entry: entry, searchQuery: historySearchText)
+            }
+        }
+        .listRowInsets(EdgeInsets(
+            top: 4 * interfaceZoom.scale,
+            leading: 10 * interfaceZoom.scale,
+            bottom: 4 * interfaceZoom.scale,
+            trailing: 10 * interfaceZoom.scale
+        ))
+        .tag(SidebarSelection.history(entry.id))
+        .contextMenu {
+            Button("Rename…") { beginSidebarRename(entry) }
+            Button("Export") {
+                exportResult(
+                    entry.result.formatted(as: entry.outputFormat, grouping: entry.grouping),
+                    format: entry.outputFormat,
+                    rtfData: entry.richTextData
+                )
+            }
+            if isArchived {
+                Button("Restore") { history.restore(entry) }
+            } else {
+                Button("Archive") {
+                    history.archive(entry)
+                    if sidebarSelection == .history(entry.id) {
+                        startNewTranscription()
+                    }
+                }
+            }
+            Divider()
+            Button("Delete", role: .destructive) {
+                showDeleteEntryConfirmation = entry
             }
         }
     }
@@ -372,6 +459,15 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detail: some View {
+        if showTutorial, tutorialStep != .splash {
+            tutorialDetail
+        } else {
+            regularDetail
+        }
+    }
+
+    @ViewBuilder
+    private var regularDetail: some View {
         switch sidebarSelection {
         case .history:
             if let result = transcriber.transcriptionResult {
@@ -393,6 +489,101 @@ struct ContentView: View {
             }
         }
     }
+
+    @ViewBuilder
+    private var tutorialDetail: some View {
+        switch tutorialStep {
+        case .splash, .input:
+            tutorialInputDetail
+        case .processing:
+            tutorialProgressDetail
+        case .review, .finish:
+            tutorialTranscriptDetail
+        }
+    }
+
+    private var tutorialInputDetail: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("New transcription")
+                        .font(.system(size: 30 * interfaceZoom.scale, weight: .bold, design: .rounded))
+
+                    Label("All processing stays on this Mac", systemImage: "lock")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                inputSection
+            }
+            .frame(maxWidth: 900, alignment: .leading)
+            .padding(.horizontal, 36)
+            .padding(.vertical, 32)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    private var tutorialProgressDetail: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Text("Transcribing")
+                .font(.system(size: 30 * interfaceZoom.scale, weight: .bold, design: .rounded))
+
+            TranscriptionProgressView(
+                fileName: "Interview.m4a",
+                audioDuration: 83,
+                phase: .transcribing,
+                onCancel: nil
+            )
+            .tutorialTarget(.processing)
+        }
+        .frame(maxWidth: 720, alignment: .leading)
+        .padding(36)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var tutorialTranscriptDetail: some View {
+        TranscriptView(
+            result: Self.tutorialResult,
+            originalText: Self.tutorialResult.text,
+            title: "Interview.m4a",
+            durationText: "1m 23s",
+            languageName: "English",
+            initialRichTextData: nil,
+            outputFormat: $tutorialOutputFormat,
+            grouping: $tutorialGrouping,
+            onCopy: { _ in },
+            onSave: { _, _, _ in },
+            onRename: { _ in },
+            onPersistEdits: { _, _ in },
+            onPresentationChange: { _, _ in },
+            tutorialStep: tutorialStep
+        )
+        .id("tutorial-transcript")
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private static let tutorialResult = TranscriptionResult(
+        text: "The quarterly review starts at three fifteen tomorrow. Export the transcript when you are ready.",
+        words: [
+            TimedWord(w: "The", start: 0.00, end: 0.20, conf: 0.99),
+            TimedWord(w: "quarterly", start: 0.21, end: 0.62, conf: 0.97),
+            TimedWord(w: "review", start: 0.63, end: 0.98, conf: 0.96),
+            TimedWord(w: "starts", start: 1.02, end: 1.30, conf: 0.94),
+            TimedWord(w: "at", start: 1.31, end: 1.43, conf: 0.98),
+            TimedWord(w: "three", start: 1.44, end: 1.70, conf: 0.48),
+            TimedWord(w: "fifteen", start: 1.71, end: 2.08, conf: 0.61),
+            TimedWord(w: "tomorrow.", start: 2.09, end: 2.56, conf: 0.95),
+            TimedWord(w: "Export", start: 2.72, end: 3.02, conf: 0.98),
+            TimedWord(w: "the", start: 3.03, end: 3.16, conf: 0.99),
+            TimedWord(w: "transcript", start: 3.17, end: 3.58, conf: 0.96),
+            TimedWord(w: "when", start: 3.59, end: 3.78, conf: 0.97),
+            TimedWord(w: "you", start: 3.79, end: 3.94, conf: 0.99),
+            TimedWord(w: "are", start: 3.95, end: 4.08, conf: 0.98),
+            TimedWord(w: "ready.", start: 4.09, end: 4.42, conf: 0.97)
+        ],
+        frameSec: 0.08
+    )
 
     private var newTranscriptionDetail: some View {
         ScrollView {
@@ -445,21 +636,28 @@ struct ContentView: View {
 
     private func transcriptDetail(_ result: TranscriptionResult) -> some View {
         let entryID = currentHistoryEntryID
-        let title = entryID
-            .flatMap { id in history.entries.first(where: { $0.id == id })?.fileName }
-            ?? fileName
+        let entry = entryID.flatMap { id in history.entries.first(where: { $0.id == id }) }
+        let title = entry?.fileName ?? fileName
 
         return TranscriptView(
             result: result,
+            originalText: entry?.originalText ?? result.text,
             title: title,
             durationText: audioDuration.map(formattedDuration),
-            languageName: selectedLanguageName,
+            languageName: entry?.languageName ?? currentTranscriptLanguageName,
+            initialRichTextData: entry?.richTextData,
             outputFormat: $outputFormat,
             grouping: $grouping,
             onCopy: copyToClipboard,
             onSave: exportResult,
             onRename: { newName in
                 renameTranscript(id: entryID, to: newName)
+            },
+            onPersistEdits: { text, richTextData in
+                persistTranscriptEdits(id: entryID, text: text, richTextData: richTextData)
+            },
+            onPresentationChange: { format, grouping in
+                persistPresentation(id: entryID, format: format, grouping: grouping)
             }
         )
         .id(entryID)
@@ -527,10 +725,18 @@ struct ContentView: View {
     }
 
     private var filteredHistoryEntries: [HistoryEntry] {
+        filteredEntries(isArchived: false)
+    }
+
+    private var filteredArchivedEntries: [HistoryEntry] {
+        filteredEntries(isArchived: true)
+    }
+
+    private func filteredEntries(isArchived: Bool) -> [HistoryEntry] {
         let query = historySearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let activeEntries = history.entries.filter { !$0.isArchived }
-        guard !query.isEmpty else { return activeEntries }
-        return activeEntries.filter { entry in
+        let matchingArchiveState = history.entries.filter { $0.isArchived == isArchived }
+        guard !query.isEmpty else { return matchingArchiveState }
+        return matchingArchiveState.filter { entry in
             entry.fileName.localizedCaseInsensitiveContains(query)
                 || entry.text.localizedCaseInsensitiveContains(query)
         }
@@ -641,18 +847,12 @@ struct ContentView: View {
     }
 
     private var supportedAudioTypes: [UTType] {
-        [
-            .wav, .mp3, .mpeg4Audio,
-            UTType(filenameExtension: "flac") ?? .audio,
-            UTType(filenameExtension: "ogg") ?? .audio,
-            UTType(filenameExtension: "opus") ?? .audio,
-            UTType(filenameExtension: "m4a") ?? .audio,
-            UTType(filenameExtension: "aiff") ?? .audio,
-            UTType(filenameExtension: "aac") ?? .audio
-        ]
+        [.wav, .mp3, .mpeg4Audio]
+            + ["flac", "ogg", "opus", "m4a", "aiff", "aac"].compactMap { UTType(filenameExtension: $0) }
     }
 
     private func setFile(_ url: URL, displayName: String? = nil) {
+        guard !isStartingTranscription, !transcriber.isTranscribing else { return }
         let ext = url.pathExtension.lowercased()
         let supported = ["wav", "wave", "mp3", "m4a", "flac", "ogg", "opus", "aiff", "aac"]
         guard supported.contains(ext) else {
@@ -662,8 +862,9 @@ struct ContentView: View {
 
         selectedFile = url
         fileName = displayName ?? url.lastPathComponent
+        currentTranscriptLanguageName = selectedLanguageName
         grouping = 0.5
-        outputFormat = .plain
+        outputFormat = .markdown
         transcriber.transcriptionResult = nil
         audioDuration = nil
         retryFileURL = nil
@@ -700,12 +901,13 @@ struct ContentView: View {
         if transcriber.isTranscribing {
             transcriber.cancel()
         }
-        outputFormat = .plain
+        outputFormat = .markdown
         grouping = 0.5
     }
 
     private func startNewTranscription() {
         clearFile()
+        currentTranscriptLanguageName = selectedLanguageName
         sidebarSelection = .newTranscription
     }
 
@@ -751,9 +953,29 @@ struct ContentView: View {
         fileName = entry.fileName
         selectedFile = nil
         audioDuration = entry.audioDuration
-        outputFormat = .plain
-        grouping = 0.5
+        outputFormat = entry.outputFormat
+        grouping = entry.grouping
+        currentTranscriptLanguageName = entry.languageName
         currentHistoryEntryID = entry.id
+    }
+
+    private func persistTranscriptEdits(id: UUID?, text: String, richTextData: Data?) {
+        guard let id,
+              let entry = history.entries.first(where: { $0.id == id }) else { return }
+        history.updateTranscript(entry, text: text, richTextData: richTextData)
+        if currentHistoryEntryID == id {
+            transcriber.transcriptionResult = TranscriptionResult(
+                text: text,
+                words: entry.words,
+                frameSec: entry.frameSec
+            )
+        }
+    }
+
+    private func persistPresentation(id: UUID?, format: OutputFormat, grouping: Double) {
+        guard let id,
+              let entry = history.entries.first(where: { $0.id == id }) else { return }
+        history.updatePresentation(entry, format: format, grouping: grouping)
     }
 
     private func formattedDuration(_ duration: TimeInterval) -> String {
@@ -763,15 +985,36 @@ struct ContentView: View {
     }
 
     private func startTranscription(_ url: URL, displayName: String? = nil) {
-        guard !transcriber.isTranscribing else { return }
+        guard !isStartingTranscription, !transcriber.isTranscribing else { return }
+        isStartingTranscription = true
         selectedFile = url
         fileName = displayName ?? url.lastPathComponent
         Task {
+            defer {
+                Task { @MainActor in
+                    isStartingTranscription = false
+                }
+            }
             do {
                 let result = try await transcriber.transcribe(fileURL: url, language: selectedLanguage)
                 await MainActor.run {
                     transcriber.transcriptionResult = result
-                    let entry = history.add(from: result, fileName: fileName, audioDuration: audioDuration)
+                    let shouldSuggestTitle = displayName != nil || fileName.localizedCaseInsensitiveContains("recording")
+                    let storedName = shouldSuggestTitle
+                        ? HistoryEntry.suggestedTitle(from: result.text, fallback: fileName)
+                        : fileName
+                    let entry = history.add(
+                        from: result,
+                        fileName: storedName,
+                        audioDuration: audioDuration,
+                        languageCode: selectedLanguage,
+                        languageName: selectedLanguageName,
+                        outputFormat: outputFormat,
+                        grouping: grouping,
+                        sourceFileName: displayName == nil ? url.lastPathComponent : nil
+                    )
+                    fileName = storedName
+                    currentTranscriptLanguageName = selectedLanguageName
                     currentHistoryEntryID = entry.id
                     if displayName != nil {
                         cleanupTemporaryRecording(at: url)
@@ -794,8 +1037,11 @@ struct ContentView: View {
     }
 
     private func cleanupTemporaryRecording(at url: URL) {
+        let recordingDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("parrocchettami", isDirectory: true)
+            .standardizedFileURL
         guard url.lastPathComponent == "recording.wav",
-              url.deletingLastPathComponent().lastPathComponent == "parrocchettami" else { return }
+              url.deletingLastPathComponent().standardizedFileURL == recordingDirectory else { return }
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -837,19 +1083,40 @@ struct ContentView: View {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    private func exportResult(_ text: String, format: OutputFormat) {
+    private func exportResult(_ text: String, format: OutputFormat, rtfData: Data? = nil) {
         let panel = NSSavePanel()
         panel.title = "Export Transcription"
         panel.prompt = "Export"
-        panel.nameFieldStringValue = format == .srt ? "transcription.srt" : "transcription.txt"
-        panel.allowedContentTypes = format == .srt
-            ? [UTType(filenameExtension: "srt") ?? .plainText]
-            : [.plainText]
+        switch format {
+        case .markdown:
+            panel.nameFieldStringValue = "transcription.md"
+            panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+        case .rtf:
+            panel.nameFieldStringValue = "transcription.rtf"
+            panel.allowedContentTypes = [UTType(filenameExtension: "rtf") ?? .plainText]
+        case .timestamped:
+            panel.nameFieldStringValue = "transcription.txt"
+            panel.allowedContentTypes = [.plainText]
+        case .srt:
+            panel.nameFieldStringValue = "transcription.srt"
+            panel.allowedContentTypes = [UTType(filenameExtension: "srt") ?? .plainText]
+        }
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
-            try text.write(to: url, atomically: true, encoding: .utf8)
+            if format == .rtf {
+                let generatedData = NSAttributedString(string: text).rtf(
+                        from: NSRange(location: 0, length: text.utf16.count),
+                        documentAttributes: [:]
+                    )
+                guard let data = rtfData ?? generatedData else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+                try data.write(to: url, options: .atomic)
+            } else {
+                try text.write(to: url, atomically: true, encoding: .utf8)
+            }
         } catch {
             showError("The transcription could not be exported: \(error.localizedDescription)")
         }
@@ -860,6 +1127,7 @@ private struct CreditsView: View {
     let parakeetVersion: String
     let canCheckForUpdates: Bool
     let onCheckForUpdates: () -> Void
+    let onShowTutorial: () -> Void
 
     var body: some View {
         ScrollView {
@@ -902,9 +1170,19 @@ private struct CreditsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Button("Check for Updates...", action: onCheckForUpdates)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canCheckForUpdates)
+                HStack {
+                    Button {
+                        onShowTutorial()
+                    } label: {
+                        Label("Show Tutorial", systemImage: "questionmark.circle")
+                    }
+
+                    Spacer()
+
+                    Button("Check for Updates...", action: onCheckForUpdates)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canCheckForUpdates)
+                }
             }
             .padding(20)
         }
@@ -936,6 +1214,7 @@ private struct CreditsView: View {
 private struct SidebarHistoryRow: View {
     @Environment(\.interfaceZoom) private var interfaceZoom
     let entry: HistoryEntry
+    let searchQuery: String
 
     var body: some View {
         HStack(spacing: 10 * interfaceZoom) {
@@ -947,13 +1226,19 @@ private struct SidebarHistoryRow: View {
                 Text(entry.fileName)
                     .font(.system(size: 13 * interfaceZoom))
                     .lineLimit(1)
-                Text(entry.formattedDate)
+                Text(detailText)
                     .font(.system(size: 11 * interfaceZoom))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private var detailText: String {
+        let preview = entry.searchPreview(for: searchQuery)
+        guard !preview.isEmpty else { return entry.formattedDate }
+        return "\(preview) · \(entry.formattedDate)"
     }
 }
 

@@ -4,6 +4,15 @@
 
 A native macOS SwiftUI app for offline audio transcription. Wraps the `parakeet-cli` binary (from [parakeet.cpp](https://github.com/mudler/parakeet.cpp)) and a GGUF speech model (tdt-0.6b-v3) from Hugging Face. No Python runtime, no server — just a SwiftUI app calling a C++ CLI subprocess.
 
+## Versioning
+
+DMG releases follow a `MAJOR.MINOR.FEATURE.BUGFIX` scheme passed to `package-dmg.sh`:
+
+- `x.y.z` — a release with new features or improvements (e.g. `1.0.15`)
+- `x.y.z.w` — a bugfix-only release (e.g. `1.0.15.1`)
+
+The package-dmg.sh version argument is embedded in the DMG filename, its Info.plist `CFBundleVersion`, and the Sparkle appcast.
+
 ## Architecture
 
 ```
@@ -160,7 +169,7 @@ ContentView stores in HistoryManager, passes to TranscriptView
 ### Sparkle (2.x)
 - Integrated via SwiftPM dependency: `https://github.com/sparkle-project/Sparkle`
 - In-app update check menu item, SparkleUpdater window, and `package-dmg.sh` signing
-- Public EdDSA key embedded in `package-dmg.sh`; appcast hosted at `https://martinowong.github.io/parrocchettami/appcast.xml`
+- Public EdDSA key embedded in `package-dmg.sh`; appcast hosted by the separate site repo at `https://martinowong.github.io/parrocchettami-site/appcast.xml`
 
 ## Build System
 

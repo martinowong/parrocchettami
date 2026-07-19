@@ -21,6 +21,8 @@ mkdir -p "$APP_BUNDLE/Contents/Resources/bin"
 cp "$BIN_SRC" "$APP_BUNDLE/Contents/MacOS/Parrocchettami"
 cp "$SCRIPT_DIR/LICENSE" "$APP_BUNDLE/Contents/Resources/LICENSE"
 cp "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$APP_BUNDLE/Contents/Resources/THIRD_PARTY_NOTICES.md"
+mkdir -p "$APP_BUNDLE/Contents/Resources/Tutorial"
+cp "$SCRIPT_DIR/Assets/Tutorial/"*.png "$APP_BUNDLE/Contents/Resources/Tutorial/"
 
 # Bundle Sparkle framework
 SPARKLE_SRC="$(swift build -c release --show-bin-path)/Sparkle.framework"
@@ -105,4 +107,4 @@ echo "Launching Parrocchettami..."
 xattr -dr com.apple.quarantine "$APP_BUNDLE" 2>/dev/null || true
 pkill -f Parrocchettami 2>/dev/null || true
 sleep 1
-open "$APP_BUNDLE"
+open -n "$APP_BUNDLE"

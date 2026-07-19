@@ -31,5 +31,9 @@ struct ParrocchettamiApp: App {
         }
         .windowToolbarStyle(.unified)
         .windowResizability(.contentMinSize)
+
+        Settings {
+            SettingsView()
+        }
     }
 }

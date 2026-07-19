@@ -2,14 +2,14 @@ import XCTest
 @testable import Parrocchettami
 
 final class TranscriptionResultTests: XCTestCase {
-    func testPlainFormattingReturnsFullText() {
+    func testMarkdownFormattingReturnsFullText() {
         let result = TranscriptionResult(
             text: "Hello from Parrocchettami.",
             words: [],
             frameSec: 0.08
         )
 
-        XCTAssertEqual(result.formatted(as: .plain), "Hello from Parrocchettami.")
+        XCTAssertEqual(result.formatted(as: .markdown), "Hello from Parrocchettami.")
     }
 
     func testTimestampedFormattingGroupsWordsByGapAndLimit() {

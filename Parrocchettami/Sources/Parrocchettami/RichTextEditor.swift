@@ -15,7 +15,10 @@ struct RichTextEditor: NSViewRepresentable {
     @Binding var action: RichTextAction?
     let isEditable: Bool
     let searchText: String
+    let allowsRichText: Bool
+    let initialRTFData: Data?
     let onFormattingChange: () -> Void
+    let onRichTextChange: (Data) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -24,7 +27,7 @@ struct RichTextEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSTextView {
         let textView = NSTextView()
         textView.delegate = context.coordinator
-        textView.isRichText = true
+        textView.isRichText = allowsRichText
         textView.importsGraphics = false
         textView.allowsUndo = true
         textView.drawsBackground = false
@@ -33,7 +36,13 @@ struct RichTextEditor: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 0, height: 0)
         textView.textContainer?.lineFragmentPadding = 0
         textView.font = NSFont.systemFont(ofSize: 15 * interfaceZoom)
-        textView.string = text
+        if allowsRichText,
+           let initialRTFData,
+           let attributed = NSAttributedString(rtf: initialRTFData, documentAttributes: nil) {
+            textView.textStorage?.setAttributedString(attributed)
+        } else {
+            textView.string = text
+        }
         context.coordinator.configureParagraphStyle(for: textView)
         context.coordinator.updateSearchHighlights(in: textView)
         return textView
@@ -42,6 +51,7 @@ struct RichTextEditor: NSViewRepresentable {
     func updateNSView(_ textView: NSTextView, context: Context) {
         context.coordinator.parent = self
         textView.isEditable = isEditable
+        textView.isRichText = allowsRichText
 
         if textView.string != text {
             context.coordinator.isUpdatingFromSwiftUI = true
@@ -79,6 +89,7 @@ struct RichTextEditor: NSViewRepresentable {
             guard !isUpdatingFromSwiftUI,
                   let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
+            publishRichText(from: textView)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -136,11 +147,18 @@ struct RichTextEditor: NSViewRepresentable {
 
             if action != .resetFormatting {
                 parent.onFormattingChange()
+                publishRichText(from: textView)
             }
             DispatchQueue.main.async {
                 textView.window?.makeFirstResponder(textView)
                 textView.setSelectedRange(selectedRange)
             }
+        }
+
+        func publishRichText(from textView: NSTextView) {
+            let range = NSRange(location: 0, length: textView.string.utf16.count)
+            guard let data = textView.rtf(from: range) else { return }
+            parent.onRichTextChange(data)
         }
 
         private func toggleTrait(

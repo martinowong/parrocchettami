@@ -21,8 +21,9 @@ final class ModelInstaller: NSObject, ObservableObject {
     )
 
     private var resumeDataURL: URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("parrocchettami-model-download-resume")
+        Self.installedModelURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("download-resume-data")
     }
 
     override init() {
@@ -57,7 +58,7 @@ final class ModelInstaller: NSObject, ObservableObject {
     func cancelDownload() {
         downloadTask?.cancel { [self] resumeData in
             if let resumeData {
-                try? resumeData.write(to: resumeDataURL, options: .atomic)
+                saveResumeData(resumeData)
             } else {
                 try? FileManager.default.removeItem(at: resumeDataURL)
             }
@@ -65,6 +66,15 @@ final class ModelInstaller: NSObject, ObservableObject {
         downloadTask = nil
         isDownloading = false
         progress = 0
+    }
+
+    private func saveResumeData(_ data: Data) {
+        let url = resumeDataURL
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? data.write(to: url, options: .atomic)
     }
 
     private func installDownloadedFile(from temporaryURL: URL) throws {
@@ -183,7 +193,7 @@ extension ModelInstaller: URLSessionDownloadDelegate {
         guard let error, (error as NSError).code != NSURLErrorCancelled else { return }
         let nsError = error as NSError
         if let resumeData = nsError.userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
-            try? resumeData.write(to: resumeDataURL, options: .atomic)
+            saveResumeData(resumeData)
         }
         DispatchQueue.main.async {
             self.downloadTask = nil

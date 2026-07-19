@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private struct InterfaceZoomKey: EnvironmentKey {
@@ -47,6 +48,7 @@ struct StopRecordingActionKey: FocusedValueKey { typealias Value = () -> Void }
 struct ClearFileActionKey: FocusedValueKey { typealias Value = () -> Void }
 struct FindInTranscriptActionKey: FocusedValueKey { typealias Value = () -> Void }
 struct ToggleDiagnosticsActionKey: FocusedValueKey { typealias Value = () -> Void }
+struct ShowTutorialActionKey: FocusedValueKey { typealias Value = () -> Void }
 
 struct IsRecordingKey: FocusedValueKey { typealias Value = Bool }
 struct IsPausedKey: FocusedValueKey { typealias Value = Bool }
@@ -79,6 +81,10 @@ extension FocusedValues {
     var toggleDiagnosticsAction: (() -> Void)? {
         get { self[ToggleDiagnosticsActionKey.self] }
         set { self[ToggleDiagnosticsActionKey.self] = newValue }
+    }
+    var showTutorialAction: (() -> Void)? {
+        get { self[ShowTutorialActionKey.self] }
+        set { self[ShowTutorialActionKey.self] = newValue }
     }
 
     var isRecording: Bool? {
@@ -118,6 +124,7 @@ struct ParrocchettamiCommands: Commands {
     @FocusedValue(\.clearFileAction) var closeFile
     @FocusedValue(\.findInTranscriptAction) var findInTranscript
     @FocusedValue(\.toggleDiagnosticsAction) var toggleDiagnostics
+    @FocusedValue(\.showTutorialAction) var showTutorial
 
     @FocusedValue(\.isRecording) var isRecording
     @FocusedValue(\.isPaused) var isPaused
@@ -195,7 +202,19 @@ struct ParrocchettamiCommands: Commands {
                 toggleDiagnostics?()
             }
             .keyboardShortcut("d", modifiers: [.command, .shift])
-    }
+        }
+
+        CommandGroup(replacing: .help) {
+            Button("Show Tutorial") {
+                showTutorial?()
+            }
+
+            Divider()
+
+            Button("Parrocchettami Help") {
+                NSApp.sendAction(#selector(NSApplication.showHelp(_:)), to: nil, from: nil)
+            }
+        }
     }
 }
 
@@ -207,6 +226,7 @@ struct FocusedSceneValuesModifier: ViewModifier {
     let stopRecordingAction: () -> Void
     let clearFileAction: () -> Void
     let toggleDiagnosticsAction: () -> Void
+    let showTutorialAction: () -> Void
     let isRecording: Bool
     let isPaused: Bool
     let isTranscribing: Bool
@@ -221,6 +241,7 @@ struct FocusedSceneValuesModifier: ViewModifier {
             .focusedSceneValue(\.stopRecordingAction, stopRecordingAction)
             .focusedSceneValue(\.clearFileAction, clearFileAction)
             .focusedSceneValue(\.toggleDiagnosticsAction, toggleDiagnosticsAction)
+            .focusedSceneValue(\.showTutorialAction, showTutorialAction)
             .focusedSceneValue(\.isRecording, isRecording)
             .focusedSceneValue(\.isPaused, isPaused)
             .focusedSceneValue(\.isTranscribing, isTranscribing)

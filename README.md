@@ -15,6 +15,9 @@ A native macOS app for local, offline audio transcription using NVIDIA Parakeet 
 - **Cancel transcription** — abort long-running transcriptions
 - **Edit & search** — edit plain text results, undo edits (up to 50 steps), find text
 - **Persistent history** — recent transcriptions saved locally, reopen/export/delete
+- **Autosaved corrections** — edited text, rich text, language, format, and phrase grouping persist with each transcript
+- **Confidence review** — highlight words below 72% model confidence for quick correction
+- **Recoverable archive** — archive and restore transcripts without counting them against the configurable recent-history limit
 - **In-app updates** — Sparkle-powered update checks for new releases
 - **Fast & local** — Metal-accelerated on Apple Silicon, everything stays on your Mac
 - **Copy & export** — copy to clipboard or save as `.txt` / `.srt`
@@ -74,14 +77,21 @@ The app appears in your Dock with a custom icon. The status pill shows green "Re
 ### Edit a transcript
 1. In **Plain Text** mode, click the pencil icon to enter edit mode
 2. Make changes — undo is available while editing
-3. Click the pencil again or reset to discard edits
-4. Copy or export the edited version
+3. Corrections are autosaved after a short delay; the header shows saving state
+4. Use reset to restore the original model transcript
+5. Copy or export the edited version
+
+### Review uncertain words
+1. Open a transcript that contains word timing and confidence data
+2. Click the warning-triangle control in the transcript toolbar
+3. Words below 72% confidence are highlighted in orange
+4. Click the pencil to correct them; edits are saved automatically
 
 ### Microphone selection
 Use the dropdown below the Record button to choose a different mic. Click the refresh icon to re-scan available devices.
 
 ### History
-Past transcriptions appear below results. Click the reopen icon to load one back, export to save, or delete individual entries. **Clear All** wipes history.
+Past transcriptions appear in the sidebar with a short text preview. Search checks both titles and transcript contents. Use a row's context menu to rename, export, archive, restore, or delete it. The Settings window controls how many recent, unarchived transcripts are retained; archived transcripts are protected from that limit. **Clear History** wipes all history.
 
 ### Language selection
 Choose from 25 European languages in the header dropdown, or leave on **Auto-detect** to let the model decide.

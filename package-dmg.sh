@@ -99,6 +99,8 @@ done
 
 /bin/cp -X "$SCRIPT_DIR/LICENSE" "$APP_BUNDLE/Contents/Resources/LICENSE"
 /bin/cp -X "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$APP_BUNDLE/Contents/Resources/THIRD_PARTY_NOTICES.md"
+mkdir -p "$APP_BUNDLE/Contents/Resources/Tutorial"
+/bin/cp -X "$SCRIPT_DIR/Assets/Tutorial/"*.png "$APP_BUNDLE/Contents/Resources/Tutorial/"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

@@ -146,7 +146,11 @@ class AudioRecorder: NSObject, ObservableObject {
 
         Task(priority: .userInitiated) {
             do {
-                try await convertAudioTo16kHzMonoWAV(sourceURL: rawURL, destinationURL: wavURL)
+                try await convertAudioTo16kHzMonoWAV(
+                    sourceURL: rawURL,
+                    destinationURL: wavURL,
+                    allowSystemOpusDecoderFallback: false
+                )
                 try? FileManager.default.removeItem(at: rawURL)
                 await MainActor.run { completion(wavURL, nil) }
             } catch {

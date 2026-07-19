@@ -2,6 +2,32 @@
 
 All notable changes to Parrocchettami are documented here.
 
+## 1.1.1 — 2026-07-19
+
+### Guided onboarding
+
+- Added a mascot-led first-run tutorial with an animated splash screen and contextual spotlights over the real app controls.
+- Added replaying the tutorial from the app's information menu.
+- Added sound and gradient-pulse feedback while moving through the tutorial.
+
+### Transcript review and persistence
+
+- Added low-confidence word review using Parakeet's per-word confidence values.
+- Autosave transcript text and rich-text corrections, with saving feedback and reset to the original model output.
+- Persist language choice, output format, phrase grouping, rich text, and source filename with history entries.
+
+### History and settings
+
+- Added searchable transcript previews and automatic titles for new microphone recordings.
+- Added an Archived section with restore support.
+- Added a configurable recent-history retention limit that never removes archived transcripts.
+- Improved app settings and menu integration for the new history and onboarding controls.
+
+### Reliability
+
+- Improved model-download, subprocess, recorder, search, and transcript-state handling.
+- Added regression coverage for confidence review and persisted history metadata.
+
 ## 1.1.0 — 2026-07-13
 
 Parrocchettami 1.1 is a substantial native macOS redesign focused on making transcription, recording, and transcript review feel clearer, faster, and more at home on the Mac.

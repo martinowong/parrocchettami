@@ -75,7 +75,7 @@ final class ProcessRunner: ProcessRunning {
     func run(
         executableURL: URL,
         arguments: [String],
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = minimalSubprocessEnvironment()
     ) async throws -> ProcessOutput {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in

@@ -64,6 +64,7 @@ struct InputWorkspace: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Choose an audio file")
         .accessibilityHint("Choose a file or drag audio into this area.")
+        .tutorialTarget(.input)
     }
 
     private var recordingAction: some View {

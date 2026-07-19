@@ -14,7 +14,9 @@ class Transcriber: ObservableObject {
     private var modelPath: String?
     private let processRunner = ProcessRunner()
     private let cancelLock = NSLock()
+    private let transcriptionLock = NSLock()
     private var pendingCancel = false
+    private var transcriptionInProgress = false
 
     func cancel() {
         guard isTranscribing else { return }
@@ -24,6 +26,7 @@ class Transcriber: ObservableObject {
         transcriptionPhase = .idle
     }
 
+    @MainActor
     func locateCLI() async {
         cliReady = false
         cliError = nil
@@ -76,6 +79,18 @@ class Transcriber: ObservableObject {
     }
 
     func transcribe(fileURL: URL, language: String = "") async throws -> TranscriptionResult {
+        let acquiredTranscriptionSlot = transcriptionLock.withLock { () -> Bool in
+            guard !transcriptionInProgress else { return false }
+            transcriptionInProgress = true
+            return true
+        }
+        guard acquiredTranscriptionSlot else {
+            throw TranscriberError.alreadyTranscribing
+        }
+        defer {
+            transcriptionLock.withLock { transcriptionInProgress = false }
+        }
+
         if cancelLock.withLock({ pendingCancel }) {
             throw TranscriberError.cancelled
         }
@@ -532,12 +547,14 @@ enum TranscriberError: LocalizedError {
     case notReady(String)
     case processFailed(String)
     case cancelled
+    case alreadyTranscribing
 
     var errorDescription: String? {
         switch self {
         case .notReady(let msg): return msg
         case .processFailed(let msg): return msg
         case .cancelled: return nil
+        case .alreadyTranscribing: return "A transcription is already in progress."
         }
     }
 }
@@ -569,8 +586,9 @@ struct TranscriptionResponse: Codable {
     let words: [TimedWord]?
 }
 
-enum OutputFormat: String, CaseIterable {
-    case plain = "Rich Text"
+enum OutputFormat: String, CaseIterable, Codable {
+    case markdown = "Markdown"
+    case rtf = "Rich Text"
     case timestamped = "Timestamped"
     case srt = "SRT"
 }
@@ -578,7 +596,7 @@ enum OutputFormat: String, CaseIterable {
 extension TranscriptionResult {
     func formatted(as format: OutputFormat, grouping: Double = 0.5) -> String {
         switch format {
-        case .plain:
+        case .markdown, .rtf:
             return text
         case .timestamped:
             let groups = groupWords(words, grouping: grouping)

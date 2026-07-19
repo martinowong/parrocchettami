@@ -5,14 +5,19 @@ struct TranscriptView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let result: TranscriptionResult
+    let originalText: String
     let title: String
     let durationText: String?
     let languageName: String
+    let initialRichTextData: Data?
     @Binding var outputFormat: OutputFormat
     @Binding var grouping: Double
     let onCopy: (String) -> Void
-    let onSave: (String, OutputFormat) -> Void
+    let onSave: (String, OutputFormat, Data?) -> Void
     let onRename: (String) -> Void
+    let onPersistEdits: (String, Data?) -> Void
+    let onPresentationChange: (OutputFormat, Double) -> Void
+    var tutorialStep: TutorialStep? = nil
 
     @State private var editedText: String = ""
     @State private var hasEdits = false
@@ -22,9 +27,15 @@ struct TranscriptView: View {
     @State private var undoStack: [String] = []
     @State private var isEditing = false
     @State private var pendingRichTextAction: RichTextAction?
+    @State private var richTextData: Data?
     @State private var isRenamingTitle = false
     @State private var titleDraft = ""
     @State private var showsCharacterCount = false
+    @State private var showConfidenceReview = false
+    @State private var isSaving = false
+    @State private var lastSavedText = ""
+    @State private var lastSavedRichTextData: Data?
+    @State private var autosaveTask: Task<Void, Never>?
     @FocusState private var isFocused: Bool
     @FocusState private var isSearchFocused: Bool
     @FocusState private var isTitleFocused: Bool
@@ -37,16 +48,28 @@ struct TranscriptView: View {
         result.formatted(as: outputFormat, grouping: grouping)
     }
 
+    private var isEditableFormat: Bool {
+        outputFormat == .markdown || outputFormat == .rtf
+    }
+
     private var trimmedSearchText: String {
         TranscriptSearch.normalizedQuery(searchText)
     }
 
     private var searchTargetText: String {
-        outputFormat == .plain ? displayText : formattedText
+        isEditableFormat ? displayText : formattedText
     }
 
     private var searchMatchCount: Int {
         TranscriptSearch.matchCount(in: searchTargetText, query: searchText)
+    }
+
+    private var lowConfidenceCount: Int {
+        ConfidenceReview.lowConfidenceWords(in: result.words).count
+    }
+
+    private var confidenceReviewIsVisible: Bool {
+        showConfidenceReview || tutorialStep == .review
     }
 
     var body: some View {
@@ -55,7 +78,7 @@ struct TranscriptView: View {
                 .padding(.horizontal, 30)
                 .padding(.top, 18)
 
-            if outputFormat != .plain {
+            if outputFormat == .timestamped || outputFormat == .srt {
                 phraseLengthControl
                     .padding(.horizontal, 30)
                     .padding(.top, 12)
@@ -71,6 +94,10 @@ struct TranscriptView: View {
         }
         .onAppear {
             if editedText.isEmpty { editedText = formattedText }
+            if richTextData == nil { richTextData = initialRichTextData }
+            lastSavedText = editedText
+            lastSavedRichTextData = richTextData
+            hasEdits = editedText != originalText || initialRichTextData != nil
         }
         .onChange(of: title) { _, newTitle in
             if !isRenamingTitle {
@@ -83,6 +110,16 @@ struct TranscriptView: View {
             } else {
                 searchText = ""
             }
+        }
+        .onChange(of: outputFormat) { _, newFormat in
+            onPresentationChange(newFormat, grouping)
+        }
+        .onChange(of: grouping) { _, newGrouping in
+            onPresentationChange(outputFormat, newGrouping)
+        }
+        .onDisappear {
+            autosaveTask?.cancel()
+            persistEditsIfNeeded()
         }
     }
 
@@ -126,26 +163,36 @@ struct TranscriptView: View {
                     .padding(.bottom, 22)
 
                 Group {
-                    if outputFormat == .plain {
+                    if isEditableFormat && (!confidenceReviewIsVisible || isEditing) {
                         RichTextEditor(
                             text: $editedText,
                             action: $pendingRichTextAction,
                             isEditable: isEditing,
                             searchText: searchText,
-                            onFormattingChange: { hasEdits = true }
+                            allowsRichText: outputFormat == .rtf,
+                            initialRTFData: initialRichTextData,
+                            onFormattingChange: {
+                                hasEdits = true
+                                scheduleAutosave()
+                            },
+                            onRichTextChange: {
+                                richTextData = $0
+                                scheduleAutosave()
+                            }
                         )
                             .focused($isFocused)
                             .accessibilityLabel(isEditing ? "Transcript editor" : "Transcript")
                             .onChange(of: editedText) { old, new in
-                                if new != old && new != formattedText {
+                                if new != old {
                                     undoStack.append(old)
                                     if undoStack.count > 50 { undoStack.removeFirst() }
-                                    hasEdits = true
+                                    hasEdits = new != originalText
+                                    scheduleAutosave()
                                 }
                             }
                             .frame(minHeight: 280)
                     } else {
-                        transcriptText(formattedText)
+                        transcriptText(isEditableFormat ? displayText : formattedText)
                     }
                 }
                 .textSelection(.enabled)
@@ -198,7 +245,7 @@ struct TranscriptView: View {
             Spacer()
 
             if hasEdits {
-                Label("Edited", systemImage: "pencil")
+                Label(isSaving ? "Saving…" : "Saved", systemImage: isSaving ? "arrow.triangle.2.circlepath" : "checkmark.circle")
                     .font(.system(size: 11 * interfaceZoom, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 9)
@@ -308,7 +355,11 @@ struct TranscriptView: View {
     }
 
     private func highlightedTranscript(_ text: String) -> AttributedString {
-        TranscriptSearch.highlightedText(text, query: searchText)
+        var attributed = confidenceReviewIsVisible
+            ? ConfidenceReview.highlightedText(text, words: result.words)
+            : AttributedString(text)
+        TranscriptSearch.applyHighlights(to: &attributed, query: searchText)
+        return attributed
     }
 
     @ViewBuilder
@@ -332,7 +383,7 @@ struct TranscriptView: View {
                 formatSelector
 
                 Button {
-                    onSave(displayText, outputFormat)
+                    onSave(displayText, outputFormat, richTextData)
                 } label: {
                     Label("Export", systemImage: "square.and.arrow.up")
                         .font(.system(size: 13 * interfaceZoom))
@@ -341,10 +392,11 @@ struct TranscriptView: View {
                 .popButtonPressEffect()
                 .help("Export in the selected format")
                 .accessibilityHint("Exports the current transcript in the selected format.")
+                .tutorialTarget(.export)
 
                 Spacer()
 
-                if outputFormat == .plain {
+                if isEditableFormat {
                     Button(action: toggleEditing) {
                         Image(systemName: isEditing ? "checkmark" : "pencil")
                             .font(.system(size: 13 * interfaceZoom, weight: .medium))
@@ -356,6 +408,28 @@ struct TranscriptView: View {
                     .popButtonPressEffect()
                     .help(isEditing ? "Done editing" : "Edit transcript")
                     .accessibilityLabel(isEditing ? "Done editing transcript" : "Edit transcript")
+                }
+
+                if lowConfidenceCount > 0 {
+                    Button {
+                        withAnimation(controlAnimation) {
+                            showConfidenceReview.toggle()
+                            if showConfidenceReview { isEditing = false }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle")
+                            Text("\(lowConfidenceCount)")
+                                .monospacedDigit()
+                        }
+                        .font(.system(size: 12 * interfaceZoom, weight: .medium))
+                    }
+                    .modifier(AdaptiveGlassButtonStyle())
+                    .popButtonPressEffect()
+                    .tint(confidenceReviewIsVisible ? .orange : .accentColor)
+                    .help("Highlight words below 72% confidence")
+                    .accessibilityLabel(confidenceReviewIsVisible ? "Hide low-confidence word highlights" : "Highlight \(lowConfidenceCount) low-confidence words")
+                    .tutorialTarget(.confidence)
                 }
 
                 Button(action: toggleSearch) {
@@ -374,7 +448,7 @@ struct TranscriptView: View {
                 copyButton
             }
 
-            if (outputFormat == .plain && isEditing) || showSearch {
+            if (isEditableFormat && isEditing) || showSearch {
                 Divider()
 
                 contextualToolsRow
@@ -389,7 +463,7 @@ struct TranscriptView: View {
     private var contextualToolsRow: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10 * interfaceZoom) {
-                if outputFormat == .plain && isEditing {
+                if isEditableFormat && isEditing {
                     editingTools
                         .transition(.opacity)
                 }
@@ -405,7 +479,7 @@ struct TranscriptView: View {
             }
 
             VStack(alignment: .leading, spacing: 8 * interfaceZoom) {
-                if outputFormat == .plain && isEditing {
+                if isEditableFormat && isEditing {
                     editingTools
                 }
                 if showSearch {
@@ -418,10 +492,12 @@ struct TranscriptView: View {
 
     private var editingTools: some View {
         HStack(spacing: 8) {
-            formattingButtons
+            if outputFormat == .rtf {
+                formattingButtons
 
-            Divider()
-                .frame(height: 22)
+                Divider()
+                    .frame(height: 22)
+            }
 
             Button(action: undo) {
                 Image(systemName: "arrow.uturn.backward")
@@ -529,10 +605,12 @@ struct TranscriptView: View {
     }
 
     private func resetForFormat(_ format: OutputFormat) {
-        hasEdits = false
         isEditing = false
         editedText = result.formatted(as: format, grouping: grouping)
+        hasEdits = isEditableFormat && editedText != originalText
+        richTextData = nil
         undoStack.removeAll()
+        onPresentationChange(format, grouping)
     }
 
     private func toggleEditing() {
@@ -575,15 +653,17 @@ struct TranscriptView: View {
     private func undo() {
         guard let previous = undoStack.popLast() else { return }
         editedText = previous
-        if undoStack.isEmpty { hasEdits = false }
+        hasEdits = editedText != originalText
     }
 
     private func resetEdits() {
-        editedText = formattedText
+        editedText = originalText
         pendingRichTextAction = .resetFormatting
+        richTextData = nil
         hasEdits = false
         isEditing = false
         undoStack.removeAll()
+        scheduleAutosave()
     }
 
     private func copyTranscript() {
@@ -592,6 +672,28 @@ struct TranscriptView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             didCopy = false
         }
+    }
+
+    private func scheduleAutosave() {
+        guard isEditableFormat else { return }
+        isSaving = true
+        autosaveTask?.cancel()
+        autosaveTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            persistEditsIfNeeded()
+        }
+    }
+
+    private func persistEditsIfNeeded() {
+        guard editedText != lastSavedText || richTextData != lastSavedRichTextData else {
+            isSaving = false
+            return
+        }
+        onPersistEdits(editedText, richTextData)
+        lastSavedText = editedText
+        lastSavedRichTextData = richTextData
+        isSaving = false
     }
 }
 

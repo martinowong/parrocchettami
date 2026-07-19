@@ -30,9 +30,14 @@ enum TranscriptSearch {
     }
 
     static func highlightedText(_ text: String, query: String) -> AttributedString {
-        let query = normalizedQuery(query)
         var attributed = AttributedString(text)
-        guard !query.isEmpty else { return attributed }
+        applyHighlights(to: &attributed, query: query)
+        return attributed
+    }
+
+    static func applyHighlights(to attributed: inout AttributedString, query: String) {
+        let query = normalizedQuery(query)
+        guard !query.isEmpty else { return }
 
         var searchStart = attributed.startIndex
         while searchStart < attributed.endIndex,
@@ -45,6 +50,5 @@ enum TranscriptSearch {
             searchStart = range.upperBound
         }
 
-        return attributed
     }
 }
