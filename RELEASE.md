@@ -3,6 +3,14 @@
 Parrocchettami distributes public beta builds as GitHub Release DMGs and uses
 Sparkle for in-app update checks.
 
+## Release policy
+
+- Parrocchettami is a beta product, but publish each version as a full GitHub
+  release, not as a GitHub pre-release. Mark the newest version as **Latest**
+  unless explicitly instructed otherwise.
+- Do not repeat unchanged system or hardware requirements in release notes.
+  Include requirements only when a release changes them.
+
 ## One-time Sparkle setup
 
 The Sparkle public EdDSA key is embedded in `package-dmg.sh` as
@@ -47,5 +55,17 @@ Parrocchettami/.build/artifacts/sparkle/Sparkle/bin/generate_appcast \
 ```
 
 5. Commit and push the updated appcast in `../parrocchettami-site`.
-6. Create the GitHub prerelease and upload the DMG plus checksum.
+6. Create a full GitHub release, mark it as **Latest**, and upload all four
+   generated release assets:
+
+```text
+dist/Parrocchettami-x.y.z-Apple-Silicon.dmg
+dist/Parrocchettami-x.y.z-Apple-Silicon.dmg.sha256
+dist/Parrocchettami-latest-Apple-Silicon.dmg
+dist/Parrocchettami-latest-Apple-Silicon.dmg.sha256
+```
+
+The stable alias is what the website download buttons use. Repeat it on every
+full published release so GitHub's `releases/latest/download/...` URL follows
+the newest release. Keep the versioned DMG in the Sparkle appcast.
 7. Ensure GitHub Pages deploys from the site repo's `.github/workflows/pages.yml`.
